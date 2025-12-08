@@ -1377,6 +1377,7 @@ const apiKey = ""; // API Key handled by environment
 const Net = {
     peer: null,
     conn: null,
+    connReady: false,
     isHost: false,
     code: "",
     statusEl: null,
@@ -1446,6 +1447,7 @@ const Net = {
         }
         this.peer = null;
         this.conn = null;
+        this.connReady = false;
     },
     setupHost() {
         this.teardownPeer();
@@ -1461,6 +1463,7 @@ const Net = {
         this.peer.on('connection', (conn) => {
             this.bindConn(conn);
             this.setStatus("Player connected!");
+            this.connReady = true; // enable start immediately on incoming connection
             this.updateStartDisabled();
         });
         this.peer.on('error', (err) => {
@@ -1499,16 +1502,19 @@ const Net = {
     },
     bindConn(conn) {
         this.conn = conn;
+        this.connReady = !!conn?.open;
         // Fallback: make sure host radio is set when we accept a connection (host side)
         const hostRadio = document.querySelector('input[name="mp-role"][value="host"]');
         if (hostRadio && !hostRadio.checked && this.isHost) hostRadio.checked = true;
         conn.on('open', () => {
             this.setStatus("Player connected!");
+            this.connReady = true;
             this.updateStartDisabled(); // Ensure Start button enables for host
         });
         conn.on('data', (data) => this.handleData(data));
         conn.on('close', () => {
             this.setStatus("Disconnected. Refresh to reconnect.");
+            this.connReady = false;
             this.updateStartDisabled();
         });
         // In case some browsers delay the 'open' event, try enabling shortly after binding.
@@ -1547,11 +1553,12 @@ const Net = {
         this.send({ type: 'chat', payload: { from: this.isHost ? 'host' : 'guest', text } });
     },
     isConnected() {
-        return !!(this.conn && this.conn.open);
+        return !!(this.conn && (this.conn.open || this.connReady));
     },
     updateStartDisabled() {
         const start = this.startBtn;
-        const isMp = document.querySelector('input[name="mode"]:checked').value === 'mp';
+        const modeEl = document.querySelector('input[name="mode"]:checked');
+        const isMp = modeEl?.value === 'mp';
         if (!start) return;
         if (!isMp) {
             start.disabled = false;
@@ -2215,6 +2222,7 @@ const Game = {
                 resultActionText: document.getElementById('result-action').innerText,
                 roundBreakdown: document.getElementById('round-breakdown').innerHTML,
                 historyHTML: document.getElementById('history-table').innerHTML,
+                historyVisible: !document.getElementById('history-container').classList.contains('hidden'),
                 biddingOpen: !document.getElementById('bidding-modal').classList.contains('hidden'),
                 suitPickerOpen: !document.getElementById('suit-picker-modal').classList.contains('hidden'),
                 dixVisible: !document.getElementById('dix-btn').classList.contains('hidden')
@@ -2310,12 +2318,7 @@ const Game = {
         this.updateScoreboard();
         // UI flags
         document.getElementById('result-modal').classList.toggle('hidden', !(state.ui?.resultOpen));
-        const scoreboard = document.getElementById('scoreboard');
-        if (scoreboard && window.matchMedia("(max-width: 768px)").matches) {
-            const isGameOver = state.ui?.resultTitle === 'Game Over';
-            const showScore = !state.ui?.resultOpen || isGameOver;
-            scoreboard.style.display = showScore ? '' : 'none';
-        }
+        // Keep HUD scoreboard visible on mobile; round modal visibility handled elsewhere
         if (state.ui?.resultDetail) document.getElementById('result-detail').innerHTML = state.ui.resultDetail;
         if (state.ui?.resultTitle) document.getElementById('result-title').innerText = state.ui.resultTitle;
         if (state.ui?.resultActionText) document.getElementById('result-action').innerText = state.ui.resultActionText;
@@ -2325,6 +2328,10 @@ const Game = {
         }
         if (state.ui?.roundBreakdown) document.getElementById('round-breakdown').innerHTML = state.ui.roundBreakdown;
         if (state.ui?.historyHTML) document.getElementById('history-table').innerHTML = state.ui.historyHTML;
+        const historyContainer = document.getElementById('history-container');
+        if (historyContainer && typeof state.ui?.historyVisible === 'boolean') {
+            historyContainer.classList.toggle('hidden', !state.ui.historyVisible);
+        }
         document.getElementById('bidding-modal').classList.add('hidden');
         document.getElementById('suit-picker-modal').classList.add('hidden');
         this.refreshDixButton(); // compute locally so guests can choose to swap
@@ -2507,9 +2514,7 @@ const Game = {
         document.getElementById('dix-btn').classList.add('hidden');
         document.getElementById('result-modal').classList.add('hidden');
         const scoreboard = document.getElementById('scoreboard');
-        if (scoreboard && window.matchMedia("(max-width: 768px)").matches) {
-            scoreboard.style.display = '';
-        }
+        if (scoreboard) scoreboard.style.display = '';
         this.hideRulesModal();
         this.clearMeldButtons();
         document.getElementById('slot-ai').innerHTML = '';
@@ -3885,6 +3890,10 @@ const Game = {
 
         breakdownEl.innerHTML = this.buildRoundBreakdownTable(stats);
         historyEl.innerHTML = this.getHistoryHTML();
+        const historyContainer = document.getElementById('history-container');
+        if (historyContainer) {
+            historyContainer.classList.toggle('hidden', !gameOver);
+        }
 
         actionBtn.innerText = gameOver ? 'New Game' : 'Next Round';
         actionBtn.setAttribute('onclick', gameOver ? 'location.reload()' : 'Game.startRound()');
@@ -3900,11 +3909,6 @@ const Game = {
                 winMsgEl.classList.remove('hidden');
                 this.triggerLossAnimation();
             }
-        }
-
-        const scoreboard = document.getElementById('scoreboard');
-        if (scoreboard && window.matchMedia("(max-width: 768px)").matches) {
-            scoreboard.style.display = gameOver ? '' : 'none';
         }
 
         document.getElementById('result-modal').classList.remove('hidden');
