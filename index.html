@@ -1525,7 +1525,11 @@ const Net = {
     },
     handleData(packet) {
         if (!packet || !packet.type) return;
-        if (packet.type === 'state' && !this.isHost) {
+        if (packet.type === 'hello' && this.isHost) {
+            // Guest announced presence; push current state immediately
+            this.connReady = true;
+            this.sendState();
+        } else if (packet.type === 'state' && !this.isHost) {
             Game.applyRemoteState(packet.payload);
             this.connReady = true;
             this.setStatus("Connected! Game syncing...");
