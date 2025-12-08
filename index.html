@@ -1509,6 +1509,9 @@ const Net = {
         conn.on('open', () => {
             this.setStatus("Player connected!");
             this.connReady = true;
+            if (Game.mode === 'mp' && Game.isHost) {
+                this.sendState(); // push initial state as soon as channel opens
+            }
             this.updateStartDisabled(); // Ensure Start button enables for host
         });
         conn.on('data', (data) => this.handleData(data));
@@ -1524,6 +1527,9 @@ const Net = {
         if (!packet || !packet.type) return;
         if (packet.type === 'state' && !this.isHost) {
             Game.applyRemoteState(packet.payload);
+            this.connReady = true;
+            this.setStatus("Connected! Game syncing...");
+            this.updateStartDisabled();
             if (!Game.gameStartedOnClient) {
                 Game.gameStartedOnClient = true;
                 const startScreen = document.getElementById('start-screen');
@@ -1553,9 +1559,12 @@ const Net = {
         this.send({ type: 'action', payload: action });
     },
     sendState() {
-        if (Game.mode === 'mp' && Game.isHost && this.conn && this.conn.open) {
-            this.send({ type: 'state', payload: Game.serializeState() });
+        if (Game.mode !== 'mp' || !Game.isHost || !this.conn) return;
+        if (!this.conn.open) {
+            setTimeout(() => this.sendState(), 150);
+            return;
         }
+        this.send({ type: 'state', payload: Game.serializeState() });
     },
     sendLog(msg) {
         if (Game.mode === 'mp' && Game.isHost) this.send({ type: 'log', payload: msg });
