@@ -1,0 +1,4188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Klabberjas - 2 Player Card Game</title>
+    <!-- Added Chewy font for bubbly card style -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chewy&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+    
+    <style>
+        :root {
+            --felt-green: #2d5e38;
+            /* Increased card dimensions */
+            --card-width: 90px;
+            --card-height: 130px;
+            --highlight: #ffd700;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* --- Screens --- */
+        #start-screen, #game-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            transition: opacity 0.5s;
+        }
+
+        #game-screen {
+            display: none;
+            /* background-color: var(--felt-green); */
+            background-image: url('back.png');
+            background-size: cover;
+            background-position: center;
+            justify-content: space-between;
+        }
+        #start-screen {
+            background-color: #000;
+            overflow: hidden;
+        }
+        #start-screen .start-bg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 0;
+        }
+        #start-screen > :not(.start-bg) {
+            position: relative;
+            z-index: 1;
+        }
+
+        .hidden { display: none !important; }
+
+        /* --- UI Elements --- */
+        h1 { margin-bottom: 20px; text-shadow: 2px 2px 4px #000; }
+        
+        button {
+            background: linear-gradient(to bottom, #4a90e2, #0056b3);
+            border: 1px solid #004494;
+            color: white;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+        }
+        button:active { transform: scale(0.95); }
+        button:disabled { background: #555; cursor: not-allowed; opacity: 0.7; }
+        
+        .sparkle-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: 1px solid #8e2de2;
+            font-weight: bold;
+        }
+
+        .meld-btn {
+            background: linear-gradient(to bottom, #ff9800, #f57c00);
+            border: 1px solid #e65100;
+            font-weight: bold;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+        .panel {
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            width: min(420px, 90%);
+        }
+        .mode-switch {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        .mode-switch label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255,255,255,0.06);
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.1);
+            cursor: pointer;
+        }
+        .row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin: 6px 0;
+            flex-wrap: wrap;
+        }
+        #mp-options {
+            margin-top: 10px;
+            padding: 12px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        #host-code {
+            font-family: monospace;
+            font-size: 22px;
+            letter-spacing: 3px;
+            padding: 6px 10px;
+            border: 1px dashed rgba(255,255,255,0.4);
+            border-radius: 6px;
+            min-width: 110px;
+            display: inline-block;
+        }
+        #net-status {
+            margin-top: 6px;
+            font-size: 13px;
+            color: #ffd700;
+        }
+
+        /* --- Game Areas --- */
+        #top-area, #bottom-area {
+            width: 100%;
+            height: 30%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        #center-area {
+            flex-grow: 1;
+            width: 100%;
+            display: flex;
+            flex-direction: column; /* Stack indicator and slots */
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        /* --- AI Chat Bubble --- */
+        #ai-chat-bubble {
+            position: absolute;
+            top: 100px; /* Below cards */
+            background: white;
+            color: black;
+            padding: 10px 15px;
+            border-radius: 15px;
+            max-width: 200px;
+            font-size: 13px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+            z-index: 20;
+        }
+        #ai-chat-bubble:after {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            margin-left: -10px;
+            border-width: 10px;
+            border-style: solid;
+            border-color: transparent transparent white transparent;
+        }
+
+        /* --- Cards --- */
+        .card {
+            width: var(--card-width);
+            height: var(--card-height);
+            background-color: white;
+            border-radius: 15px; /* More rounded corners */
+            display: inline-flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 8px;
+            box-sizing: border-box;
+            box-shadow: 3px 3px 8px rgba(0,0,0,0.4);
+            margin: 0 5px;
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.2s, margin 0.2s, opacity 0.3s; 
+            color: black;
+            font-weight: bold;
+            z-index: 1;
+            font-family: 'Chewy', cursive; /* Bubbly font */
+            border: 1px solid #ccc;
+        }
+
+        .card.red { color: #e74c3c; } /* Softer red */
+        .card.black { color: #2c3e50; } /* Softer black */
+
+        /* Larger, stacked layout for corners */
+        .card-top { 
+            font-size: 32px; 
+            line-height: 0.8; 
+            text-align: left; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 25px;
+        }
+        .card-top span { font-size: 22px; margin-top: 2px; } /* Suit icon size */
+
+        .card-center { 
+            font-size: 55px; /* Huge center icon */
+            position: absolute; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+        }
+
+        .card-bottom { 
+            font-size: 32px; 
+            line-height: 0.8; 
+            text-align: right; 
+            transform: rotate(180deg); 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 25px;
+            align-self: flex-end;
+        }
+        .card-bottom span { font-size: 22px; margin-top: 2px; }
+
+        .card-back {
+            background: repeating-linear-gradient(
+                45deg,
+                #606dbc,
+                #606dbc 10px,
+                #465298 10px,
+                #465298 20px
+            );
+            border: 4px solid white;
+        }
+        .card-back * { display: none; }
+
+        /* Meld highlight (temporary) */
+        .meld-highlight {
+            transform: translateY(-12px) scale(1.06);
+            box-shadow: 0 0 18px rgba(255,215,0,0.95);
+            border: 2px solid gold;
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .hand .card:hover { transform: translateY(-15px); z-index: 10; }
+        .hand .card.selected { transform: translateY(-20px); border: 3px solid gold; box-shadow: 0 0 15px gold; }
+        .hand .card.disabled { filter: grayscale(100%) brightness(0.7); cursor: not-allowed; }
+        .hand {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 6px;
+            width: 100%;
+        }
+        .hand .card { flex: 0 0 var(--card-width); } /* Prevent flex shrink so rows wrap instead of squashing */
+
+        body.in-bidding #human-hand {
+            flex-wrap: nowrap;
+        }
+
+        /* Animation Keyframes */
+        @keyframes dealSlide {
+            0% { transform: translateY(-200px) scale(0.5); opacity: 0; }
+            100% { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        
+        .dealing-anim {
+            animation: dealSlide 0.5s ease-out forwards;
+        }
+
+        .trick-win-anim-human {
+            transition: transform 0.5s ease-in, opacity 0.5s ease-in;
+            transform: translateY(200px) scale(0.1);
+            opacity: 0;
+        }
+        .trick-win-anim-ai {
+            transition: transform 0.5s ease-in, opacity 0.5s ease-in;
+            transform: translateY(-200px) scale(0.1);
+            opacity: 0;
+        }
+
+        /* --- Table --- */
+        #table-slots {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        .slot {
+            width: var(--card-width);
+            height: var(--card-height);
+            border: 3px dashed rgba(255,255,255,0.3);
+            border-radius: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #turnup-container {
+            position: absolute;
+            left: 20px;
+            top: 35%; 
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        #turnup-label {
+            margin-bottom: 5px;
+            font-size: 14px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px black;
+            color: #ddd;
+            font-family: 'Segoe UI', sans-serif; /* Keep interface text standard */
+        }
+
+        /* --- Info Panels --- */
+        #hud-bar {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 60;
+        }
+        #control-bubbles {
+            display: flex;
+            gap: 8px;
+        }
+        .bubble-btn {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.25);
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            padding: 0;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.35);
+            transition: transform 0.1s ease, background 0.2s ease, border-color 0.2s ease;
+        }
+        .bubble-btn:hover { transform: translateY(-1px); background: rgba(255,255,255,0.12); }
+        .bubble-btn:active { transform: translateY(1px); }
+        .bubble-btn.muted {
+            background: rgba(120,20,20,0.8);
+            border-color: rgba(255,150,150,0.6);
+            color: #ffd4d4;
+        }
+        #scoreboard {
+            background: rgba(0,0,0,0.6);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            text-align: right;
+            min-width: 150px;
+        }
+        #settings-panel {
+            position: absolute;
+            top: 60px;
+            right: 10px;
+            width: 270px;
+            background: rgba(0,0,0,0.9);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 10px;
+            padding: 12px;
+            box-shadow: 0 10px 24px rgba(0,0,0,0.55);
+            z-index: 80;
+        }
+        #settings-panel h3 {
+            margin: 0 0 6px 0;
+            font-size: 16px;
+        }
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0;
+        }
+        .slider-row label { width: 50px; text-align: left; font-weight: bold; }
+        .slider-row input[type="range"] { flex: 1; accent-color: #ffd700; }
+        .slider-row span { width: 22px; text-align: right; }
+        .quit-btn {
+            width: 100%;
+            margin-top: 8px;
+            background: linear-gradient(to bottom, #d9534f, #b52b27);
+            border: 1px solid #8a1f1b;
+            font-weight: bold;
+        }
+        .btn-rules {
+            background: linear-gradient(to bottom, #28a745, #218838);
+            border-color: #1e7e34;
+        }
+        
+        #game-log {
+            position: absolute;
+            bottom: 150px;
+            left: 10px;
+            width: 250px;
+            height: 150px;
+            background: rgba(0,0,0,0.5);
+            color: #eee;
+            font-size: 12px;
+            padding: 5px;
+            overflow-y: auto;
+            border-radius: 5px;
+            pointer-events: auto; 
+            z-index: 50; 
+        }
+
+        #chat-panel {
+            position: absolute;
+            bottom: 150px;
+            right: 10px;
+            width: 250px;
+            height: 150px;
+            background: rgba(0,0,0,0.5);
+            color: #eee;
+            font-size: 12px;
+            border-radius: 5px;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        #chat-header {
+            padding: 4px 8px;
+            font-weight: bold;
+            background: rgba(255,255,255,0.08);
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        #chat-messages {
+            flex: 1;
+            padding: 6px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .chat-msg {
+            word-break: break-word;
+        }
+        .chat-blue { color: #66b3ff; }
+        .chat-red { color: #ff7676; }
+        #chat-input-row {
+            display: flex;
+            gap: 6px;
+            padding: 6px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        #chat-input {
+            flex: 1;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 4px;
+            color: #fff;
+            padding: 4px 6px;
+        }
+        #chat-send {
+            padding: 4px 10px;
+            font-size: 12px;
+        }
+
+        /* Custom Scrollbar for Game Log */
+        #game-log::-webkit-scrollbar {
+            width: 10px;
+        }
+        #game-log::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.3);
+            border-radius: 5px;
+        }
+        #game-log::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.5);
+            border-radius: 5px;
+            border: 1px solid rgba(0,0,0,0.2);
+        }
+        #game-log::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.8);
+        }
+
+        #turn-indicator {
+            background: rgba(0,0,0,0.6);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            font-size: 16px;
+            text-shadow: 1px 1px 2px black;
+        }
+
+        #trump-display {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 14px;
+            width: calc(var(--card-width) + 30px);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+
+        #trump-display .card { margin: 0; }
+        .trump-label { font-weight: bold; color: #f0f0f0; }
+        .trump-maker { font-size: 12px; color: #ddd; }
+
+        .card.trump-card {
+            cursor: default;
+            margin: 0 auto; /* Center it */
+        }
+        .card.trump-card:hover {
+            transform: none; /* Disable hover effect */
+        }
+        .card.trump-card .card-top,
+        .card.trump-card .card-bottom {
+            display: none;
+        }
+        .card.trump-card .card-center {
+            font-size: 55px;
+        }
+
+        #meld-container {
+            position: absolute;
+            bottom: 120px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        #meld-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        .meld-timer {
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.75);
+            border: 2px solid #ffd700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.35);
+            font-weight: bold;
+            color: #fff;
+        }
+        .meld-timer .timer-icon {
+            position: absolute;
+            top: 6px;
+            left: 6px;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .meld-timer .timer-value {
+            font-size: 16px;
+            line-height: 1;
+        }
+        .meld-timer.flash {
+            animation: meldTimerFlash 0.6s steps(2) infinite;
+            border-color: #ffb3b3;
+        }
+        @keyframes meldTimerFlash {
+            0% { background: #b22222; color: #fff; }
+            50% { background: #4a0a0a; color: #ffe6e6; }
+            100% { background: #b22222; color: #fff; }
+        }
+
+        /* --- Modals --- */
+        #bidding-modal, #suit-picker-modal, #result-modal, #hint-modal, #bella-modal, #action-modal, #rules-modal {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.95);
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 100;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            max-width: 80%;
+            display: block;
+        }
+
+        #rules-modal .rules-content {
+            max-height: 60vh;
+            overflow-y: auto;
+            text-align: left;
+            padding: 0 15px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin: 15px 0;
+        }
+        #rules-modal h3 {
+            margin-top: 20px;
+            margin-bottom: 8px;
+            color: #ffd700;
+            border-bottom: 1px solid rgba(255,215,0,0.2);
+            padding-bottom: 4px;
+        }
+        #rules-modal ul {
+            list-style-position: inside;
+            padding-left: 0;
+        }
+        #rules-modal li {
+            margin-bottom: 8px;
+        }
+        #rules-modal strong {
+            color: #fff;
+        }
+
+        .suit-btn { font-size: 24px; width: 50px; height: 50px; line-height: 50px; padding: 0; }
+        
+        /* Loading Spinner */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #fff;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Round / Score breakdown tables */
+        .score-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 13px;
+            color: #eee;
+        }
+        .score-table th, .score-table td {
+            border: 1px solid rgba(255,255,255,0.15);
+            padding: 4px 6px;
+            text-align: center;
+        }
+        .score-table th {
+            background: rgba(255,255,255,0.06);
+            font-weight: bold;
+        }
+        .score-table .category {
+            text-align: left;
+        }
+        #history-container {
+            margin-top: 12px;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        /* --- Mobile Layout (portrait phones) --- */
+        @media (max-width: 768px) {
+            :root {
+                --card-width: 50px;
+                --card-height: 72px;
+            }
+            body {
+                font-size: 14px;
+                overflow-y: auto;
+            }
+            #game-screen {
+                padding-bottom: 65px; /* Add space for the new game log */
+            }
+            h1 { font-size: 26px; }
+            button {
+                padding: 8px 14px;
+                font-size: 14px;
+            }
+            .panel { width: 94%; padding: 14px; }
+            #start-screen { padding: 12px; }
+            #turn-indicator { font-size: 14px; margin-bottom: 10px; }
+            #game-log {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                height: 60px;
+                font-size: 11px;
+                padding: 5px;
+                box-sizing: border-box;
+                border-top: 1px solid rgba(255,255,255,0.2);
+                background: rgba(0,0,0,0.8);
+                transform: none; /* Override desktop styles */
+            }
+            #chat-panel {
+                display: none;
+            }
+            #scoreboard {
+                position: static;
+                margin: 6px auto 0;
+            }
+            #hud-bar {
+                position: static;
+                justify-content: center;
+                flex-wrap: wrap;
+                gap: 6px;
+                margin-bottom: 6px;
+            }
+            #control-bubbles { gap: 6px; }
+            .bubble-btn { width: 34px; height: 34px; font-size: 16px; }
+            
+            /* --- Center Row Layout --- */
+            #center-area {
+                position: relative;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            #trump-display, #turnup-container {
+                position: absolute;
+                top: 50%;
+                transform: translateY(-50%);
+                width: auto;
+                z-index: 5; /* Below cards being played */
+                height: 110px;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+            }
+            #trump-display { left: 5px; }
+            #turnup-container { 
+                right: 5px; 
+                align-items: flex-end;
+            }
+            #table-slots {
+                flex-direction: row;
+            }
+            #trump-display .card, #turnup-container .card { 
+                margin: 0 auto;
+            }
+            .trump-label, #turnup-label { font-size: 12px; }
+
+            #settings-panel {
+                position: fixed;
+                top: 70px;
+                right: 10px;
+                left: 10px;
+                width: auto;
+            }
+            #top-area, #bottom-area { height: 28%; padding: 6px 4px; }
+            .card {
+                padding: 4px;
+                border-radius: 8px;
+            }
+             .card-top, .card-bottom { font-size: 20px; width: 18px; }
+            .card-top span, .card-bottom span { font-size: 14px; }
+            .card-center { font-size: 32px; }
+
+            /* Mobile cards show a single suit icon; hide corner symbols */
+            .card .card-top span,
+            .card .card-bottom span {
+                display: none;
+            }
+            #table-slots .card .card-center {
+                font-size: 44px; /* Make center icon bigger */
+            }
+
+            #ai-chat-bubble { top: 60px; max-width: 150px; font-size: 12px; }
+            #meld-container {
+                position: absolute;
+                bottom: 70px; /* Above game log */
+                right: 5px;
+                flex-direction: column;
+                align-items: flex-end;
+                padding: 0;
+            }
+            #meld-buttons {
+                flex-direction: column;
+                align-items: flex-end;
+            }
+            .meld-timer {
+                width: 42px;
+                height: 42px;
+            }
+            #bidding-modal, #suit-picker-modal, #result-modal, #hint-modal, #bella-modal {
+                width: 92%;
+                max-width: none;
+            }
+            .score-table { font-size: 12px; }
+        }
+
+        #jassus-animation, #bella-animation {
+            position: absolute;
+            top: 50%;
+            left: -200px; /* Start off-screen */
+            transform: translateY(-50%);
+            width: 150px; 
+            height: auto;
+            z-index: 200;
+            pointer-events: none;
+        }
+
+        #jassus-animation.bounce {
+            animation: bounceAcross 3s ease-in-out forwards;
+        }
+
+        @keyframes bounceAcross {
+            0% {
+                left: -200px;
+                transform: translateY(-50%) scale(0.8);
+            }
+            25% {
+                left: 25%;
+                transform: translateY(-70%) scale(1.1) rotate(-15deg);
+            }
+            50% {
+                left: 50%;
+                transform: translateY(-50%) scale(1) rotate(0deg);
+            }
+            75% {
+                left: 75%;
+                transform: translateY(-70%) scale(1.1) rotate(15deg);
+            }
+            100% {
+                left: 110%; /* Go off-screen to the right */
+                transform: translateY(-50%) scale(0.8);
+            }
+        }
+
+        #win-message.lost {
+            color: #e74c3c; /* Red color for loss message */
+        }
+
+        #jassus-animation, #loser-animation, #bella-animation {
+            position: absolute;
+            width: 150px; 
+            height: auto;
+            z-index: 200;
+            pointer-events: none;
+            display: none; /* Hide by default */
+        }
+
+        .bounce-around {
+            animation: bounceAround 5s ease-in-out infinite;
+            display: block !important;
+        }
+
+        @keyframes bounceAround {
+            0%, 100% {
+                top: 40%;
+                left: 5%;
+                transform: rotate(5deg);
+            }
+            25% {
+                top: 60%;
+                left: 85%;
+                transform: rotate(-10deg);
+            }
+            50% {
+                top: 70%;
+                left: 40%;
+                transform: rotate(0deg);
+            }
+            75% {
+                top: 30%;
+                left: 90%;
+                transform: rotate(10deg);
+            }
+        }
+
+        /* --- Landscape Mobile Layout --- */
+        @media (orientation: landscape) and (max-width: 900px) and (max-height: 500px) {
+            #top-area, #bottom-area {
+                height: 35%; /* More space for hands */
+            }
+            #center-area {
+                /* padding-right: calc(var(--card-width) + 20px); */ /* No longer needed */
+            }
+            #table-slots {
+                flex-direction: row; /* Horizontal slots again */
+            }
+            #game-log {
+                height: 45px; /* Shorter log */
+            }
+            #game-screen {
+                padding-bottom: 50px;
+            }
+            #meld-container {
+                bottom: 50px;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- START SCREEN -->
+    <div id="start-screen">
+        <img src="open.png" alt="Klabberjas opening screen" class="start-bg" onerror="this.onerror=null; this.src='open.PNG';">
+        <h1>Klabberjas</h1>
+        <div class="panel">
+            <p>Choose how you want to play</p>
+            <div class="mode-switch">
+                <label><input id="mode-ai" type="radio" name="mode" value="ai" checked> Play vs AI</label>
+                <label><input id="mode-mp" type="radio" name="mode" value="mp"> Multiplayer Online</label>
+            </div>
+            <div id="mp-options" class="hidden">
+                <div class="mode-switch">
+                    <label><input type="radio" name="mp-role" value="host" checked> Host</label>
+                    <label><input type="radio" name="mp-role" value="join"> Join</label>
+                </div>
+                <div id="host-controls">
+                    <div class="row">
+                        <button id="btn-generate-code" type="button">Generate Code</button>
+                        <span id="host-code">-----</span>
+                    </div>
+                    <div class="row"><small>Share this code with your friend.</small></div>
+                </div>
+                <div id="join-controls" class="hidden">
+                    <div class="row">
+                        <input id="join-code" placeholder="Enter 5-letter code" maxlength="5" style="text-transform: uppercase; padding: 8px; border-radius: 6px; border: 1px solid #444; background: rgba(0,0,0,0.5); color: white; width: 150px;">
+                        <button id="btn-join" type="button">Join</button>
+                    </div>
+                </div>
+                <div id="net-status">Offline</div>
+            </div>
+            <label>Target Score: 
+                <select id="target-score">
+                    <option value="501">501</option>
+                    <option value="1001">1001</option>
+                </select>
+            </label>
+            <br><br>
+            <div id="difficulty-row">
+                <label>Difficulty: 
+                    <select id="difficulty">
+                        <option value="easy">Easy</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="hard">Hard</option>
+                    </select>
+                </label>
+            </div>
+            <br>
+            <button id="start-btn" onclick="Game.init()">Start Game</button>
+            <button id="rules-btn-main" onclick="showRulesModal()" type="button" class="btn-rules">How to Play</button>
+        </div>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="game-screen">
+        <img src="jassus.png" id="jassus-animation" class="hidden" onerror="this.onerror=null; this.src='jassus.PNG';">
+        <img src="loser.png" id="loser-animation" class="hidden" onerror="this.onerror=null; this.src='jassus.png';">
+        <div id="trump-display"></div>
+        <div id="hud-bar">
+            <div id="control-bubbles">
+                <button type="button" id="btn-sfx" class="bubble-btn" title="Toggle sound effects">&#128266;</button>
+                <button type="button" id="btn-music" class="bubble-btn" title="Toggle music">&#9835;</button>
+                <button type="button" id="btn-settings" class="bubble-btn" title="Settings">&#9881;</button>
+            </div>
+            <div id="scoreboard">
+                <div>Score Limit: <span id="limit-display">501</span></div>
+                <div id="score-human-row"><span id="label-human">You</span>: <span id="score-human">0</span></div>
+                <div id="score-ai-row"><span id="label-ai">AI</span>: <span id="score-ai">0</span></div>
+            </div>
+        </div>
+        <img src="bella.png" id="bella-animation" class="hidden" onerror="this.onerror=null; this.src='bella.PNG';">
+        <div id="settings-panel" class="hidden">
+            <h3>Settings</h3>
+            <div class="slider-row">
+                <label for="music-volume">Music</label>
+                <input type="range" id="music-volume" min="0" max="10" value="6">
+                <span id="music-volume-value">6</span>
+            </div>
+            <div class="slider-row">
+                <label for="sound-volume">Sound</label>
+                <input type="range" id="sound-volume" min="0" max="10" value="8">
+                <span id="sound-volume-value">8</span>
+            </div>
+            <button type="button" id="btn-quit" class="quit-btn">Quit to Main Menu</button>
+            <button type="button" id="rules-btn-settings" onclick="showRulesModal()" class="quit-btn btn-rules" style="margin-top: 8px;">How to Play</button>
+        </div>
+        <div id="game-log"></div>
+        <div id="chat-panel">
+            <div id="chat-header">Chat</div>
+            <div id="chat-messages"></div>
+            <div id="chat-input-row">
+                <input id="chat-input" type="text" placeholder="Say something...">
+                <button id="chat-send" type="button">Send</button>
+            </div>
+        </div>
+
+        <!-- AI Hand (Top) -->
+        <div id="top-area">
+            <div id="ai-hand" class="hand"></div>
+            <div id="ai-chat-bubble">I'm watching you...</div>
+        </div>
+
+        <!-- Center Table -->
+        <div id="center-area">
+            <!-- Proposed Trump / Turn Up Slot (Left) -->
+            <div id="turnup-container">
+                <div id="turnup-label">Proposed Trump</div>
+                <div id="turnup-slot" class="slot" style="border-color: gold;"></div>
+            </div>
+
+            <!-- Turn Indicator (Centered above cards) -->
+            <div id="turn-indicator">Waiting...</div>
+
+            <div id="table-slots">
+                <!-- Played cards -->
+                <div id="slot-ai" class="slot"></div>
+                <div id="slot-human" class="slot"></div>
+            </div>
+        </div>
+
+        <!-- Human Hand (Bottom) -->
+        <div id="bottom-area">
+            <div id="human-hand" class="hand"></div>
+            <div style="position: absolute; bottom: 20px; right: 20px; display: flex; gap: 10px; flex-direction: column; align-items: flex-end;">
+                <button id="dix-btn" class="hidden" onclick="Game.swapDix()">Swap the 7</button>
+            </div>
+            
+            <!-- Meld Buttons Container -->
+            <div id="meld-container">
+                <div id="meld-timer" class="meld-timer hidden">
+                    <span class="timer-icon">&#x23F2;</span>
+                    <span id="meld-timer-value" class="timer-value">10</span>
+                </div>
+                <div id="meld-buttons"></div>
+            </div>
+        </div>
+
+        <!-- Modals -->
+        <div id="bidding-modal" class="hidden">
+            <h3>Trump Proposal</h3>
+            <div id="bid-card-display" style="margin-bottom: 15px;"></div>
+            <p id="bid-prompt">Do you accept this suit?</p>
+            <button onclick="Game.handleBid('take')">Take</button>
+            <button onclick="Game.handleBid('pass')">Pass</button>
+        </div>
+
+        <div id="suit-picker-modal" class="hidden">
+            <h3 id="suit-picker-title">Pick a Trump Suit</h3>
+            <div>
+                <button class="suit-btn" onclick="Game.pickSuit('S')">♠</button>
+                <button class="suit-btn" onclick="Game.pickSuit('H')">♥</button>
+                <button class="suit-btn" onclick="Game.pickSuit('C')">♣</button>
+                <button class="suit-btn" onclick="Game.pickSuit('D')">♦</button>
+            </div>
+            <!-- Bimah Option: No Trump -->
+            <button id="btn-notrump" onclick="Game.pickSuit('NT')" class="hidden" style="margin-top: 10px; background: #666; border-color: #444;">No Trump</button>
+            
+            <button id="btn-pass2" onclick="Game.handleBid('pass2')" style="margin-top: 10px;">Pass</button>
+        </div>
+
+        <div id="result-modal" class="hidden">
+            <h2 id="result-title">Round Over</h2>
+            <h3 id="win-message" class="hidden"></h3>
+            <p id="result-detail"></p>
+            <div id="round-breakdown"></div>
+            <div id="history-container">
+                <h4 style="margin: 10px 0 4px;">Running Scoreboard</h4>
+                <div id="history-table"></div>
+            </div>
+            <button id="result-action" onclick="Game.startRound()">Next Round</button>
+        </div>
+
+        <!-- Bella Call Modal -->
+        <div id="bella-modal" class="hidden">
+            <h3>Call Bella?</h3>
+            <p>You played a K/Q of Trumps and hold the other.</p>
+            <button onclick="Game.confirmBella(true)">Call Bella!</button>
+            <button onclick="Game.confirmBella(false)" style="background: #555;">Don't Call</button>
+        </div>
+
+        <!-- Generic Modal for Mobile Actions -->
+        <div id="action-modal" class="hidden">
+            <h3>Action Required</h3>
+            <div id="action-modal-content" style="display: flex; flex-direction: column; gap: 10px; margin: 15px 0;"></div>
+            <button onclick="Game.hideActionModal()" style="background: #555;">Close</button>
+        </div>
+
+        <!-- Rules Modal -->
+        <div id="rules-modal" class="hidden">
+            <h2>How to Play Klabberjas</h2>
+            <div class="rules-content">
+
+                <h3>🃏 Klabberjass: A Fun Card Game for 2 Players!</h3>
+
+                <p>Klabberjass is a card game where the goal is to score more points than your opponent by playing tricks, making combos (called "melds"), and winning the most valuable cards.</p>
+
+
+
+                <h3>🔥 TRUMPS vs NORMAL CARDS</h3>
+
+                <p>There are 4 suits: ♥️ ♦️ ♠️ ♣️</p>
+
+                <p>But each round, one suit becomes the TRUMP suit. Trumps are the strongest cards – they beat all other suits.</p>
+
+                <h4>In TRUMPS:</h4>
+
+                <ul>
+
+                    <li>Jack (Jass) = 20 points (most powerful!)</li>
+
+                    <li>Nine (Minel) = 14 points</li>
+
+                    <li>Aces, 10s, Kings, Queens still score, but are not as strong</li>
+
+                </ul>
+
+                <h4>In NON-TRUMPS:</h4>
+
+                <ul>
+
+                    <li>Ace = 11 points</li>
+
+                    <li>King = 4 points</li>
+
+                    <li>Queen = 3 points</li>
+
+                    <li>Jack = 2 points</li>
+
+                    <li>Ten = 10 points</li>
+
+                    <li>Nine = 0 points</li>
+
+                </ul>
+
+
+
+                <h3>🧮 SCORING (POINT VALUES)</h3>
+
+                <p>Here are the card values for each trick:</p>
+
+                <table class="score-table">
+
+                    <thead>
+
+                        <tr>
+
+                            <th>Card</th>
+
+                            <th>Trump Suit</th>
+
+                            <th>Other Suits</th>
+
+                        </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                        <tr><td>Jack</td><td>20 pts</td><td>2 pts</td></tr>
+
+                        <tr><td>Nine</td><td>14 pts</td><td>0 pts</td></tr>
+
+                        <tr><td>Ace</td><td>11 pts</td><td>11 pts</td></tr>
+
+                        <tr><td>Ten</td><td>10 pts</td><td>10 pts</td></tr>
+
+                        <tr><td>King</td><td>4 pts</td><td>4 pts</td></tr>
+
+                        <tr><td>Queen</td><td>3 pts</td><td>3 pts</td></tr>
+
+                        <tr><td>Last Trick (Stog)</td><td colspan="2">+10 pts</td></tr>
+
+                    </tbody>
+
+                </table>
+
+                <p>You also earn extra points from melds (card sequences) and Bella (more on this below!).</p>
+
+
+
+                <h3>🎲 SETUP</h3>
+
+                <ul>
+
+                    <li>2 players</li>
+
+                    <li>Each gets 6 cards</li>
+
+                    <li>Turn 1 card face-up from the deck (this might be trump!)</li>
+
+                    <li>Rest of the deck is placed in the middle</li>
+
+                </ul>
+
+
+
+                <h3>🤔 BIDDING: CHOOSE THE TRUMP SUIT</h3>
+
+                <p><strong>Step 1:</strong> The player who did not deal gets the first chance to say:</p>
+
+                <ul>
+
+                    <li>"Take On!" → take the suit of the face-up card as trump</li>
+
+                    <li>"Pass" → give the choice to the other player</li>
+
+                </ul>
+
+                <p><strong>Step 2 (if both passed):</strong></p>
+
+                <ul>
+
+                    <li>Second round: Players can now choose any suit as trump (even "No Trump")</li>
+
+                    <li>If the second player also passes, the dealer must choose a trump</li>
+
+                </ul>
+
+                <p>Then each player gets 3 more cards (9 total in hand).</p>
+
+
+
+                <h3>💥 MELDS (COMBOS BEFORE YOU PLAY)</h3>
+
+                <p>Before the first card is played, players can show melds:</p>
+
+                <ul>
+
+                    <li>3 cards in a row of the same suit = 20 points (Example: 7♣️ 8♣️ 9♣️)</li>
+
+                    <li>4 or more in a row of the same suit = 50 points</li>
+
+                    <li>Bella = If you have Queen + King of the trump suit = +20 bonus points</li>
+
+                </ul>
+
+                <p>Only the player with the best meld scores. The other gets nothing.</p>
+
+
+
+                <h3>🕹️ PLAYING TRICKS</h3>
+
+                <p>The goal is for players to win as many tricks as possible.</p>
+
+                <p><strong>How to play:</strong></p>
+
+                <ul>
+
+                    <li>First player plays any card</li>
+
+                    <li>Second player must: follow the same suit if they can; if not, play a trump; if they can't do either, play any card</li>
+
+                </ul>
+
+                <p><strong>Winning the trick:</strong></p>
+
+                <ul>
+
+                    <li>Highest card of the same suit wins</li>
+
+                    <li>Any trump beats a non-trump</li>
+
+                    <li>If both play trump, higher trump wins</li>
+
+                    <li>If playing a trump and you have a higher one, you must beat it</li>
+
+                    <li>Whoever wins the trick leads the next one</li>
+
+                </ul>
+
+
+
+                <h3>🧾 END OF ROUND: COUNTING POINTS</h3>
+
+                <p>Each player adds up:</p>
+
+                <ul>
+
+                    <li>Points from cards they won in tricks</li>
+
+                    <li>Points from melds (if they won the meld battle)</li>
+
+                    <li>Bella bonus (if declared)</li>
+
+                    <li>10 points if you won the last trick</li>
+
+                </ul>
+
+                <p><strong>Maker Rule:</strong> The person who chose trump (the "Maker") must score more points than their opponent. If they do, they keep all points. If they don't, they get 0, and the opponent gets all the points!</p>
+
+                <p><strong>Black Hand Bonus:</strong> If your opponent wins no tricks at all, you get 100 bonus points!</p>
+
+
+
+                <h3>🏆 HOW TO WIN</h3>
+
+                <p>Keep playing rounds until someone reaches the target score (501 or 1001 points). Whoever gets there first wins the game!</p>
+
+
+
+
+
+            </div>
+            <button onclick="Game.hideRulesModal()">Close</button>
+        </div>
+    </div>
+
+<script>
+/**
+ * Klabberjas Game Engine
+ * Implements Standard 2-Player rules (Rotterdam variant for trumping).
+ * Integrated with Google Gemini API for Commentary and Hints.
+ */
+
+function showRulesModal() {
+    const modal = document.getElementById('rules-modal');
+    if (!modal) return;
+    // Move to body if start screen is showing so display:none on game screen doesn't hide it
+    if (document.getElementById('start-screen')?.style.display !== 'none' && modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+    }
+    modal.classList.remove('hidden');
+}
+
+function hideRulesModal() {
+    const modal = document.getElementById('rules-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    const gameScreen = document.getElementById('game-screen');
+    if (gameScreen && modal.parentElement !== gameScreen) {
+        gameScreen.appendChild(modal);
+    }
+}
+
+const apiKey = ""; // API Key handled by environment
+
+const Net = {
+    peer: null,
+    conn: null,
+    connReady: false,
+    isHost: false,
+    code: "",
+    statusEl: null,
+    startBtn: null,
+    
+    // ADDED: Configuration for NAT Traversal (STUN Servers)
+    peerConfig: {
+        config: {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
+            ]
+        },
+        debug: 2 // Helps see errors in the console
+    },
+
+    init() {
+        this.statusEl = document.getElementById('net-status');
+        this.startBtn = document.getElementById('start-btn');
+        this.isHost = document.querySelector('input[name="mp-role"]:checked')?.value !== 'join';
+        document.getElementById('btn-generate-code').onclick = () => this.setupHost();
+        document.getElementById('btn-join').onclick = () => {
+            const code = document.getElementById('join-code').value.trim().toUpperCase();
+            if (code.length !== 5) { this.setStatus("Enter the 5-letter code."); return; }
+            this.setupJoin(code);
+        };
+        document.querySelectorAll('input[name="mode"]').forEach(r => {
+            r.addEventListener('change', () => this.refreshModeUI());
+            r.addEventListener('click', () => this.refreshModeUI()); // safety for browsers missing change on radio click
+        });
+        document.querySelectorAll('input[name="mp-role"]').forEach(r => {
+            r.addEventListener('change', () => {
+                const role = r.value;
+                document.getElementById('host-controls').classList.toggle('hidden', role !== 'host');
+                document.getElementById('join-controls').classList.toggle('hidden', role !== 'join');
+                this.isHost = role === 'host';
+                this.updateStartDisabled();
+            });
+        });
+        this.refreshModeUI();
+    },
+    refreshModeUI() {
+        const modeEl = document.querySelector('input[name="mode"]:checked');
+        const isMp = modeEl?.value === 'mp';
+        const mpOpts = document.getElementById('mp-options');
+        const diffRow = document.getElementById('difficulty-row');
+        if (mpOpts) mpOpts.classList.toggle('hidden', !isMp);
+        if (diffRow) diffRow.classList.toggle('hidden', isMp);
+        this.setStatus(isMp ? "Pick Host or Join to connect." : "Offline");
+        this.updateStartDisabled();
+    },
+    generateCode() {
+        const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+        let out = "";
+        for (let i = 0; i < 5; i++) out += chars[Math.floor(Math.random() * chars.length)];
+        return out;
+    },
+    setStatus(msg) {
+        if (this.statusEl) this.statusEl.innerText = msg;
+    },
+    teardownPeer() {
+        if (this.peer) {
+            try { this.peer.destroy(); } catch(e) {}
+        }
+        this.peer = null;
+        this.conn = null;
+        this.connReady = false;
+    },
+    setupHost() {
+        this.teardownPeer();
+        this.isHost = true;
+        this.code = this.generateCode();
+        document.getElementById('host-code').innerText = this.code;
+        
+        // UPDATED: Added this.peerConfig
+        this.peer = new Peer(`kj-${this.code}`, this.peerConfig);
+        
+        this.setStatus("Waiting for a player to join...");
+        this.peer.on('open', () => this.setStatus(`Hosting. Code: ${this.code}`));
+        this.peer.on('connection', (conn) => {
+            this.bindConn(conn);
+            this.setStatus("Player connected!");
+            this.connReady = true; // enable start immediately on incoming connection
+            this.updateStartDisabled();
+        });
+        this.peer.on('error', (err) => {
+            console.error(err);
+            this.setStatus(`Peer error: ${err.type || err}`);
+        });
+    },
+    setupJoin(code) {
+        this.teardownPeer();
+        this.isHost = false;
+        this.code = code;
+        
+        // UPDATED: Added this.peerConfig
+        this.peer = new Peer(null, this.peerConfig); // Pass null ID to get auto-assigned one
+        
+        this.setStatus("Connecting to host...");
+        this.peer.on('open', () => {
+            const conn = this.peer.connect(`kj-${code}`);
+            // Important: Handle connection errors specifically for the 'connect' call
+            if(!conn) {
+                 this.setStatus("Connection failed immediately.");
+                 return;
+            }
+            conn.on('open', () => {
+                this.bindConn(conn);
+                this.setStatus("Connected! Waiting for host to start.");
+                this.updateStartDisabled();
+                Net.send({ type: 'hello' });
+            });
+            conn.on('error', (err) => this.setStatus(`Conn error: ${err.type || err}`));
+        });
+        this.peer.on('error', (err) => {
+            console.error(err);
+            this.setStatus(`Peer error: ${err.type || err}`);
+        });
+    },
+    bindConn(conn) {
+        this.conn = conn;
+        this.connReady = !!conn?.open;
+        // Fallback: make sure host radio is set when we accept a connection (host side)
+        const hostRadio = document.querySelector('input[name="mp-role"][value="host"]');
+        if (hostRadio && !hostRadio.checked && this.isHost) hostRadio.checked = true;
+        conn.on('open', () => {
+            this.setStatus("Player connected!");
+            this.connReady = true;
+            this.updateStartDisabled(); // Ensure Start button enables for host
+        });
+        conn.on('data', (data) => this.handleData(data));
+        conn.on('close', () => {
+            this.setStatus("Disconnected. Refresh to reconnect.");
+            this.connReady = false;
+            this.updateStartDisabled();
+        });
+        // In case some browsers delay the 'open' event, try enabling shortly after binding.
+        setTimeout(() => this.updateStartDisabled(), 100);
+    },
+    handleData(packet) {
+        if (!packet || !packet.type) return;
+        if (packet.type === 'state' && !this.isHost) {
+            Game.applyRemoteState(packet.payload);
+            if (!Game.gameStartedOnClient) {
+                Game.gameStartedOnClient = true;
+                const startScreen = document.getElementById('start-screen');
+                if (startScreen && startScreen.style.display !== 'none') {
+                    startScreen.style.opacity = 0;
+                    setTimeout(() => {
+                        startScreen.style.display = 'none';
+                        const gameScreen = document.getElementById('game-screen');
+                        if (gameScreen) gameScreen.style.display = 'flex';
+                    }, 500);
+                }
+            }
+        } else if (packet.type === 'action' && this.isHost) {
+            Game.handleRemoteAction(packet.payload);
+        } else if (packet.type === 'log' && !this.isHost) {
+            Game.log(packet.payload);
+        } else if (packet.type === 'chat') {
+            Game.receiveChat(packet.payload);
+        }
+    },
+    send(payload) {
+        if (this.conn && this.conn.open) {
+            this.conn.send(payload);
+        }
+    },
+    sendAction(action) {
+        this.send({ type: 'action', payload: action });
+    },
+    sendState() {
+        if (Game.mode === 'mp' && Game.isHost && this.conn && this.conn.open) {
+            this.send({ type: 'state', payload: Game.serializeState() });
+        }
+    },
+    sendLog(msg) {
+        if (Game.mode === 'mp' && Game.isHost) this.send({ type: 'log', payload: msg });
+    },
+    sendChat(text) {
+        if (Game.mode !== 'mp') return;
+        this.send({ type: 'chat', payload: { from: this.isHost ? 'host' : 'guest', text } });
+    },
+    isConnected() {
+        return !!(this.conn && (this.conn.open || this.connReady));
+    },
+    updateStartDisabled() {
+        const start = this.startBtn;
+        const modeEl = document.querySelector('input[name="mode"]:checked');
+        const isMp = modeEl?.value === 'mp';
+        if (!start) return;
+        if (!isMp) {
+            start.disabled = false;
+            start.innerText = "Start Game";
+            return;
+        }
+        // Host can start after a connection exists; guest waits for host.
+        const role = document.querySelector('input[name="mp-role"]:checked')?.value || 'host';
+        start.disabled = role === 'join' ? true : !this.isConnected();
+        start.innerText = role === 'join' ? "Waiting for Host..." : "Start Game";
+    }
+};
+
+window.addEventListener('load', () => {
+    Net.init();
+    AudioManager.init();
+    Game.setupChatUI();
+});
+
+const SUITS = ['S', 'H', 'C', 'D']; 
+const SYMBOLS = {'S':'♠', 'H':'♥', 'C':'♣', 'D':'♦', 'NT': 'NT'};
+const COLORS = {'S':'black', 'H':'red', 'C':'black', 'D':'red', 'NT': 'gold'};
+const RANKS = ['7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+const MELD_TWENTY = 20;
+const MELD_FIFTY = 50;
+const BELLA_POINTS = 20;
+
+const soundBank = {
+    deal: new Audio('deal.mp3'),
+    turn: new Audio('turn.mp3'),
+    meld: new Audio('meld.mp3'),
+    lose: new Audio('lose.mp3'),
+    win: new Audio('win.mp3'),
+    finallose: new Audio('finallose.mp3'),
+    finalwin: new Audio('finalwin.mp3')
+};
+
+const DEFAULT_MUSIC_VOLUME = 0.6; // 6/10
+const DEFAULT_SFX_VOLUME = 0.8;   // 8/10
+
+const AudioManager = {
+    music: new Audio('yasumi.mp3'),
+    musicVolume: DEFAULT_MUSIC_VOLUME,
+    sfxVolume: DEFAULT_SFX_VOLUME,
+    musicMuted: false,
+    sfxMuted: false,
+    wasPlayingBeforeHide: false,
+    ui: {},
+
+    init() {
+        this.music.loop = true;
+        this.music.preload = 'auto';
+        this.cacheDom();
+        if (this.ui.musicSlider) this.musicVolume = Number(this.ui.musicSlider.value) / 10;
+        if (this.ui.soundSlider) this.sfxVolume = Number(this.ui.soundSlider.value) / 10;
+        this.applyVolumes();
+        this.attachEvents();
+        this.refreshUI();
+    },
+
+    cacheDom() {
+        this.ui.musicBtn = document.getElementById('btn-music');
+        this.ui.sfxBtn = document.getElementById('btn-sfx');
+        this.ui.settingsBtn = document.getElementById('btn-settings');
+        this.ui.settingsPanel = document.getElementById('settings-panel');
+        this.ui.musicSlider = document.getElementById('music-volume');
+        this.ui.soundSlider = document.getElementById('sound-volume');
+        this.ui.musicValue = document.getElementById('music-volume-value');
+        this.ui.soundValue = document.getElementById('sound-volume-value');
+        this.ui.quitBtn = document.getElementById('btn-quit');
+    },
+
+    attachEvents() {
+        if (this.ui.musicBtn) this.ui.musicBtn.onclick = () => this.toggleMusicMute();
+        if (this.ui.sfxBtn) this.ui.sfxBtn.onclick = () => this.toggleSfxMute();
+        if (this.ui.settingsBtn) this.ui.settingsBtn.onclick = () => this.toggleSettings();
+        if (this.ui.musicSlider) this.ui.musicSlider.oninput = (e) => this.setMusicVolume(e.target.value);
+        if (this.ui.soundSlider) this.ui.soundSlider.oninput = (e) => this.setSfxVolume(e.target.value);
+        if (this.ui.quitBtn) this.ui.quitBtn.onclick = () => this.quitToMenu();
+        this.attachPageLifecycle();
+    },
+
+    toggleSettings(forceOpen = null) {
+        if (!this.ui.settingsPanel) return;
+        const shouldShow = forceOpen !== null ? forceOpen : this.ui.settingsPanel.classList.contains('hidden');
+        this.syncSliders();
+        this.ui.settingsPanel.classList.toggle('hidden', !shouldShow);
+    },
+
+    syncSliders() {
+        if (this.ui.musicSlider) this.ui.musicSlider.value = Math.round(this.musicVolume * 10);
+        if (this.ui.soundSlider) this.ui.soundSlider.value = Math.round(this.sfxVolume * 10);
+        this.updateSliderLabels();
+    },
+
+    setMusicVolume(val) {
+        this.musicVolume = Math.max(0, Math.min(10, Number(val))) / 10;
+        this.applyVolumes();
+        this.updateSliderLabels();
+        if (!this.musicMuted && this.music.paused) this.playMusic(false);
+    },
+
+    setSfxVolume(val) {
+        this.sfxVolume = Math.max(0, Math.min(10, Number(val))) / 10;
+        this.applyVolumes();
+        this.updateSliderLabels();
+    },
+
+    applyVolumes() {
+        this.music.volume = this.musicMuted ? 0 : this.musicVolume;
+        Object.values(soundBank).forEach(a => a.volume = this.sfxMuted ? 0 : this.sfxVolume);
+    },
+
+    attachPageLifecycle() {
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.wasPlayingBeforeHide = !this.music.paused && !this.musicMuted;
+                this.music.pause();
+            } else if (this.wasPlayingBeforeHide && !this.musicMuted) {
+                this.playMusic(false);
+            }
+        });
+        window.addEventListener('pagehide', () => this.stopMusic(true));
+        window.addEventListener('beforeunload', () => this.stopMusic(true));
+    },
+
+    playMusic(resetTime = false) {
+        if (resetTime) this.music.currentTime = 0;
+        if (this.musicMuted) return;
+        this.applyVolumes();
+        this.music.play().catch(err => console.warn('Music play error', err));
+    },
+
+    stopMusic(resetTime = true) {
+        try {
+            this.music.pause();
+            if (resetTime) this.music.currentTime = 0;
+        } catch (e) {
+            console.warn('Music stop error', e);
+        }
+    },
+
+    toggleMusicMute() {
+        this.musicMuted = !this.musicMuted;
+        if (this.musicMuted) this.music.pause();
+        else this.playMusic(false);
+        this.applyVolumes();
+        this.refreshUI();
+    },
+
+    toggleSfxMute() {
+        this.sfxMuted = !this.sfxMuted;
+        this.applyVolumes();
+        this.refreshUI();
+    },
+
+    refreshUI() {
+        if (this.ui.musicBtn) this.ui.musicBtn.classList.toggle('muted', this.musicMuted);
+        if (this.ui.sfxBtn) this.ui.sfxBtn.classList.toggle('muted', this.sfxMuted);
+        this.updateSliderLabels();
+    },
+
+    updateSliderLabels() {
+        if (this.ui.musicValue) this.ui.musicValue.innerText = Math.round(this.musicVolume * 10);
+        if (this.ui.soundValue) this.ui.soundValue.innerText = Math.round(this.sfxVolume * 10);
+    },
+
+    quitToMenu() {
+        this.stopMusic(true);
+        location.reload();
+    }
+};
+
+function playSound(name) {
+    const snd = soundBank[name];
+    if (!snd || AudioManager.sfxMuted) return;
+    try {
+        snd.volume = AudioManager.sfxVolume;
+        snd.currentTime = 0;
+        snd.play();
+    } catch (e) {
+        console.warn('Sound play error', name, e);
+    }
+}
+
+// Base values - VERIFIED
+// J (Trump): 20, 9 (Trump): 14, A: 11, 10: 10, K: 4, Q: 3, J (Non-Trump): 2
+const VALUES_NON_TRUMP = {'7':0, '8':0, '9':0, '10':10, 'J':2, 'Q':3, 'K':4, 'A':11};
+const VALUES_TRUMP = {'7':0, '8':0, '9':14, '10':10, 'J':20, 'Q':3, 'K':4, 'A':11};
+const ORDER_NON_TRUMP = ['7', '8', '9', 'J', 'Q', 'K', '10', 'A']; 
+const ORDER_TRUMP = ['7', '8', 'Q', 'K', '10', 'A', '9', 'J']; 
+const SEQUENCE_ORDER = ['7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+// --- GEMINI HELPER ---
+async function callGemini(prompt) {
+    if (!apiKey) {
+        console.warn("No API Key provided");
+        return "I can't reach my brain right now!";
+    }
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }]
+            })
+        });
+        
+        const data = await response.json();
+        return data.candidates[0].content.parts[0].text;
+    } catch (error) {
+        console.error("Gemini API Error:", error);
+        return "Thinking failed.";
+    }
+}
+
+class Card {
+    constructor(suit, rank) {
+        this.suit = suit;
+        this.rank = rank;
+        this.id = `${rank}${suit}`;
+    }
+
+    getHTML(faceUp = true, clickable = false) {
+        if (!faceUp) return `<div class="card card-back"></div>`;
+        const color = COLORS[this.suit];
+        const symbol = SYMBOLS[this.suit];
+        // Update to use flexbox span structure for stacking rank and suit
+        return `
+            <div class="card ${color} ${clickable ? 'clickable' : ''}" data-id="${this.id}">
+                <div class="card-top">${this.rank}<span>${symbol}</span></div>
+                <div class="card-center">${symbol}</div>
+                <div class="card-bottom">${this.rank}<span>${symbol}</span></div>
+            </div>
+        `;
+    }
+
+    getValue(trumpSuit) {
+        if (trumpSuit === 'NT') return VALUES_NON_TRUMP[this.rank];
+        return (this.suit === trumpSuit) ? VALUES_TRUMP[this.rank] : VALUES_NON_TRUMP[this.rank];
+    }
+
+    getPower(trumpSuit) {
+        if (trumpSuit === 'NT') return ORDER_NON_TRUMP.indexOf(this.rank);
+        if (this.suit === trumpSuit) {
+            return 100 + ORDER_TRUMP.indexOf(this.rank);
+        }
+        return ORDER_NON_TRUMP.indexOf(this.rank);
+    }
+    
+    toString() {
+        return `${this.rank}${SYMBOLS[this.suit]}`;
+    }
+}
+
+const Game = {
+    mode: 'ai',
+    isHost: true,
+    mySlot: 'human', // 'human' on host, 'ai' on guest (host perspective)
+    gameStartedOnClient: false, // tracks whether guest-side start screen was cleared
+    targetScore: 501,
+    difficulty: 'medium',
+    deck: [],
+    hands: { human: [], ai: [] },
+    scores: { human: 0, ai: 0 },
+    dealer: 'human',
+    trumpSuit: null,
+    turnUpCard: null,
+    maker: null,
+    tricks: [],
+    currentTrick: [],
+    phase: 'start',
+    turn: null,
+    gameEnded: false,
+    playedCards: [],
+    meldPoints: { human: 0, ai: 0 },
+    bellaPoints: { human: 0, ai: 0 },
+    trickPoints: { human: 0, ai: 0 },
+    tricksCount: { human: 0, ai: 0 }, // For Black Hand Rule
+    blackHandBonus: { human: 0, ai: 0 },
+    humanDeclaredMelds: [], // Stores manually called melds (local user)
+    opponentDeclaredMelds: [], // Stores opponent-declared melds (multiplayer)
+    highlightCards: { human: [], ai: [] },
+    highlightTimers: { human: null, ai: null },
+    pendingBellaCard: null, // For Bella modal state
+    bellaCalled: { human: false, ai: false },
+    bellaDeclined: { human: false, ai: false },
+    bellaPieces: { human: [], ai: [] }, // tracks K/Q of trump played by each player
+    lastTrickWinner: null,
+    roundHistory: [],
+    lastRoundStats: null,
+    firstCardPlayed: false,
+    meldsRevealed: false,
+    humanHasPlayed: false,
+    meldHandsSnapshot: { human: [], ai: [] },
+    meldResolved: false,
+    awaitingDixChoice: false,
+    dixWaitLogged: false,
+    animatingDeal: false, 
+    logHistory: [],
+    prevTurn: null,
+    isUiLocked: false,
+    humanMeldCalled: false,
+    opponentMeldCalled: false,
+    pendingRemotePlay: false,
+    aiPlayTimer: null,
+    meldWaitLogged: false,
+    remotePlayLocked: false,
+    meldTimerId: null,
+    meldTimerDeadline: null,
+    meldTimerActive: false,
+    meldTimerFinished: false,
+    meldTimerRemaining: 0,
+    meldTimerAnnounced: false,
+
+    opponentLabel() {
+        if (this.mode === 'mp') {
+            return this.isHost ? 'CHAMPS' : 'WINNERS';
+        }
+        return 'AI';
+    },
+
+    getPlayerIdentifier(player) {
+        if (this.mode === 'mp') {
+            const me = this.isHost ? 'WINNERS' : 'CHAMPS';
+            const opp = this.isHost ? 'CHAMPS' : 'WINNERS';
+            return player === 'human' ? me : opp;
+        }
+        return (player === 'human') ? 'You' : this.opponentLabel();
+    },
+
+    resetLogs() {
+        this.logHistory = [];
+        const log = document.getElementById('game-log');
+        log.innerHTML = '';
+    },
+
+    clearAiPlayTimer() {
+        if (this.aiPlayTimer) {
+            clearTimeout(this.aiPlayTimer);
+            this.aiPlayTimer = null;
+        }
+    },
+
+    scheduleAiPlay(delay = 1200) {
+        this.clearAiPlayTimer();
+        this.aiPlayTimer = setTimeout(() => {
+            this.aiPlayTimer = null;
+            if (this.phase === 'play' && this.turn === 'ai') {
+                this.aiPlay();
+            }
+        }, delay);
+    },
+
+    resumeAiAfterMeld() {
+        if (this.turn === 'ai' && this.phase === 'play' && !this.meldResolved && !this.firstCardPlayed && this.mode !== 'mp') {
+            this.scheduleAiPlay(500);
+        }
+    },
+
+    refreshDixButton() {
+        const btn = document.getElementById('dix-btn');
+        btn.classList.add('hidden');
+        if (!this.trumpSuit || this.trumpSuit === 'NT' || !this.turnUpCard) return;
+        if (this.phase !== 'play') return;
+        if (this.humanHasPlayed) return;
+        
+        if (this.trumpSuit !== this.turnUpCard.suit) return;
+
+        const hasDix = this.hands.human.some(c => c.rank === '7' && c.suit === this.trumpSuit);
+        if (hasDix) {
+            // Only show the desktop button. Mobile is handled by updateActionModal.
+            if (!window.matchMedia("(max-width: 768px)").matches) {
+                btn.classList.remove('hidden');
+            }
+        }
+    },
+
+    updateMeldSnapshot(target = 'both') {
+        if (target === 'human' || target === 'both') {
+            this.meldHandsSnapshot.human = this.hands.human.slice();
+        }
+        if (target === 'ai' || target === 'both') {
+            this.meldHandsSnapshot.ai = this.hands.ai.slice();
+        }
+    },
+
+    getMeldButtonContainer() {
+        return document.getElementById('meld-buttons') || document.getElementById('meld-container');
+    },
+
+    clearMeldButtons() {
+        const container = this.getMeldButtonContainer();
+        if (container) container.innerHTML = '';
+    },
+
+    idsToSeqs(idSeqs, hand, snapshot = []) {
+        const pool = (snapshot && snapshot.length) ? snapshot : hand;
+        return (idSeqs || []).map(seq => seq.map(id => pool.find(c => c.id === id)).filter(Boolean)).filter(s => s.length);
+    },
+
+    describeSeq(seq) {
+        if (!seq || seq.length === 0) return '';
+        const pts = this.scoreSeq(seq).points;
+        const names = pts === MELD_FIFTY ? 'FIFTY' : 'TWENTY';
+        const cards = seq.map(c => c.toString()).join(' ');
+        return `${names} (${cards})`;
+    },
+
+    isBellaMeld(seq) {
+        if (!seq || !seq.length) return false;
+        if (!this.trumpSuit || this.trumpSuit === 'NT') return false;
+        if (seq[0].suit !== this.trumpSuit) return false;
+        const ranks = seq.map(c => c.rank);
+        const hasJQK = ['J', 'Q', 'K'].every(r => ranks.includes(r));
+        const hasQKA = ['Q', 'K', 'A'].every(r => ranks.includes(r));
+        return hasJQK || hasQKA;
+    },
+
+    trackBellaPiece(player, rank) {
+        if (!this.bellaPieces[player]) this.bellaPieces[player] = [];
+        if (!this.bellaPieces[player].includes(rank)) this.bellaPieces[player].push(rank);
+    },
+
+    setMeldHighlight(player, seqs) {
+        this.clearHighlight(player);
+        const ids = new Set();
+        (seqs || []).forEach(seq => seq.forEach(c => ids.add(c.id)));
+        this.highlightCards[player] = Array.from(ids);
+        const shouldPush = (this.mode === 'mp' && this.isHost);
+        if (shouldPush) Net.sendState();
+        this.updateUI();
+    },
+
+    hasHumanMelds() {
+        if (this.trumpSuit === 'NT') return false;
+        const sourceHand = (this.meldHandsSnapshot && this.meldHandsSnapshot.human.length)
+            ? this.meldHandsSnapshot.human
+            : this.hands.human;
+        return this.getSequences(sourceHand).length > 0;
+    },
+
+    hasOpponentMelds() {
+        if (this.trumpSuit === 'NT') return false;
+        const sourceHand = (this.meldHandsSnapshot && this.meldHandsSnapshot.ai.length)
+            ? this.meldHandsSnapshot.ai
+            : this.hands.ai;
+        return this.getSequences(sourceHand).length > 0;
+    },
+
+    bothPlayersHaveMelds() {
+        return this.hasHumanMelds() && this.hasOpponentMelds();
+    },
+
+    suitRank(s) {
+        if (!s) return 99;
+        if (this.trumpSuit && this.trumpSuit !== 'NT' && s === this.trumpSuit) return 0; // trump highest
+        const order = ['S', 'H', 'D', 'C']; // Spades, Hearts, Diamonds, Clubs
+        const idx = order.indexOf(s);
+        return idx === -1 ? 99 : idx + 1; // lower wins in tie-breaker comparisons
+    },
+
+    setHighlights(player, seqs) {
+        const ids = new Set();
+        (seqs || []).forEach(seq => seq.forEach(c => ids.add(c.id)));
+        this.highlightCards[player] = Array.from(ids);
+    },
+
+    clearHighlight(player) {
+        if (this.highlightTimers[player]) {
+            clearTimeout(this.highlightTimers[player]);
+            this.highlightTimers[player] = null;
+        }
+        this.highlightCards[player] = [];
+    },
+
+    flashHighlight(player, seqs, duration = 2500) {
+        this.clearHighlight(player);
+        this.setHighlights(player, seqs);
+        this.updateUI();
+        const shouldPush = (this.mode === 'mp' && this.isHost);
+        if (shouldPush) Net.sendState();
+        this.highlightTimers[player] = setTimeout(() => {
+            this.clearHighlight(player);
+            if (shouldPush) Net.sendState();
+            this.updateUI();
+        }, duration);
+    },
+
+    renderTableSlots() {
+        const aiSlot = document.getElementById('slot-ai');
+        const humanSlot = document.getElementById('slot-human');
+        aiSlot.innerHTML = '';
+        humanSlot.innerHTML = '';
+        if (this.playedCards && this.playedCards[0]) {
+            const pc = this.playedCards[0];
+            const html = pc.card ? pc.card.getHTML() : '';
+            if (pc.player === 'human') humanSlot.innerHTML = html;
+            else aiSlot.innerHTML = html;
+        }
+        if (this.playedCards && this.playedCards[1]) {
+            const pc = this.playedCards[1];
+            const html = pc.card ? pc.card.getHTML() : '';
+            if (pc.player === 'human') humanSlot.innerHTML = html;
+            else aiSlot.innerHTML = html;
+        }
+    },
+
+    renderMeldTimer(forceHide = false) {
+        const timerEl = document.getElementById('meld-timer');
+        const valueEl = document.getElementById('meld-timer-value');
+        if (!timerEl || !valueEl) return;
+
+        if (forceHide || !this.meldTimerActive) {
+            timerEl.classList.add('hidden');
+            timerEl.classList.remove('flash');
+            valueEl.innerText = '';
+            return;
+        }
+
+        const remainingMs = this.meldTimerDeadline ? (this.meldTimerDeadline - Date.now()) : 0;
+        const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+        this.meldTimerRemaining = remaining;
+        valueEl.innerText = remaining;
+        timerEl.classList.toggle('hidden', false);
+        timerEl.classList.toggle('flash', remaining <= 3);
+    },
+
+    resetMeldTimerState() {
+        if (this.meldTimerId) clearInterval(this.meldTimerId);
+        this.meldTimerId = null;
+        this.meldTimerDeadline = null;
+        this.meldTimerActive = false;
+        this.meldTimerFinished = false;
+        this.meldTimerRemaining = 0;
+        this.meldTimerAnnounced = false;
+        this.renderMeldTimer(true);
+    },
+
+    stopMeldTimer(markFinished = false) {
+        if (this.meldTimerId) {
+            clearInterval(this.meldTimerId);
+            this.meldTimerId = null;
+        }
+        this.meldTimerActive = false;
+        this.meldTimerDeadline = null;
+        this.meldTimerRemaining = 0;
+        if (markFinished) this.meldTimerFinished = true;
+        this.renderMeldTimer(true);
+    },
+
+    startMeldTimer(durationMs = 10000) {
+        this.stopMeldTimer();
+        this.meldTimerActive = true;
+        this.meldTimerFinished = false;
+        this.meldTimerDeadline = Date.now() + durationMs;
+        this.meldTimerAnnounced = true;
+        this.log("Both players have melds. 10 seconds to declare before play starts.");
+        this.renderMeldTimer();
+        this.clearAiPlayTimer();
+        this.meldTimerId = setInterval(() => this.tickMeldTimer(), 200);
+        if (this.mode === 'mp' && this.isHost) Net.sendState();
+    },
+
+    tickMeldTimer() {
+        if (!this.meldTimerActive || !this.meldTimerDeadline) return;
+        const remainingMs = this.meldTimerDeadline - Date.now();
+        this.meldTimerRemaining = Math.max(0, Math.ceil(remainingMs / 1000));
+        this.renderMeldTimer();
+        if (remainingMs <= 0) {
+            this.finishMeldTimer();
+        }
+    },
+
+    finishMeldTimer() {
+        this.stopMeldTimer(true);
+        if (this.mode === 'mp' && this.isHost) Net.sendState();
+        if (this.phase === 'play' && this.turn === 'ai') {
+            this.processTurn();
+        } else {
+            this.updateUI();
+        }
+    },
+
+    syncMeldTimerFromState(meldTimer) {
+        this.stopMeldTimer(!!meldTimer?.finished);
+        if (meldTimer && meldTimer.active) {
+            const remainingMs = Math.max(0, meldTimer.remainingMs || 0);
+            this.meldTimerFinished = !!meldTimer.finished;
+            this.meldTimerActive = true;
+            this.meldTimerDeadline = Date.now() + remainingMs;
+            this.renderMeldTimer();
+            this.tickMeldTimer();
+            if (this.meldTimerActive) {
+                this.meldTimerId = setInterval(() => this.tickMeldTimer(), 200);
+            }
+        } else {
+            this.meldTimerFinished = !!(meldTimer && meldTimer.finished);
+            this.renderMeldTimer(true);
+        }
+    },
+
+    maybeStartMeldTimer() {
+        return;
+    },
+
+    isMeldTimerBlockingPlay() {
+        return false;
+    },
+
+    isBellaInSeq(seq) {
+        if (!this.trumpSuit || this.trumpSuit === 'NT' || !seq || seq.length < 2) {
+            return false;
+        }
+        if (seq[0].suit !== this.trumpSuit) {
+            return false;
+        }
+        const hasK = seq.some(c => c.rank === 'K');
+        const hasQ = seq.some(c => c.rank === 'Q');
+        return hasK && hasQ;
+    },
+
+    serializeState() {
+        const cardToObj = (c) => c ? { suit: c.suit, rank: c.rank } : null;
+        return {
+            mode: this.mode,
+            dealer: this.dealer,
+            trumpSuit: this.trumpSuit,
+            turnUpCard: cardToObj(this.turnUpCard),
+            maker: this.maker,
+            phase: this.phase,
+            turn: this.turn,
+            firstCardPlayed: this.firstCardPlayed,
+            trickAnimation: this.trickAnimation,
+            targetScore: this.targetScore,
+            scores: this.scores,
+            meldPoints: this.meldPoints,
+            bellaPoints: this.bellaPoints,
+            trickPoints: this.trickPoints,
+            tricksCount: this.tricksCount,
+            meldsRevealed: this.meldsRevealed,
+            bellaPieces: this.bellaPieces,
+            hands: {
+                human: this.hands.human.map(cardToObj),
+                ai: this.hands.ai.map(cardToObj)
+            },
+            playedCards: this.playedCards.map(pc => pc ? { player: pc.player, card: cardToObj(pc.card) } : null),
+            declaredMelds: {
+                human: (this.humanDeclaredMelds || []).map(seq => seq.map(c => c ? c.id : null)),
+                opponent: (this.opponentDeclaredMelds || []).map(seq => seq.map(c => c ? c.id : null))
+            },
+            turnUpVisible: !!this.turnUpCard,
+            logHistory: this.logHistory.slice(-80),
+            highlightCards: this.highlightCards,
+            ui: {
+                resultOpen: !document.getElementById('result-modal').classList.contains('hidden'),
+                resultDetail: document.getElementById('result-detail').innerHTML,
+                resultTitle: document.getElementById('result-title').innerText,
+                resultActionText: document.getElementById('result-action').innerText,
+                roundBreakdown: document.getElementById('round-breakdown').innerHTML,
+                historyHTML: document.getElementById('history-table').innerHTML,
+                historyVisible: !document.getElementById('history-container').classList.contains('hidden'),
+                biddingOpen: !document.getElementById('bidding-modal').classList.contains('hidden'),
+                suitPickerOpen: !document.getElementById('suit-picker-modal').classList.contains('hidden'),
+                dixVisible: !document.getElementById('dix-btn').classList.contains('hidden')
+            },
+            meldResolved: this.meldResolved,
+            humanMeldCalled: this.humanMeldCalled,
+            opponentMeldCalled: this.opponentMeldCalled,
+            meldHandsSnapshot: {
+                human: this.meldHandsSnapshot.human.map(cardToObj),
+                ai: this.meldHandsSnapshot.ai.map(cardToObj)
+            },
+            jassusAnimation: this.jassusAnimation
+        };
+    },
+
+    applyRemoteState(state) {
+        // Map host perspective to guest-local human perspective
+        const swap = (p) => p === 'human' ? 'ai' : (p === 'ai' ? 'human' : p);
+        const objToCard = (o) => o ? new Card(o.suit, o.rank) : null;
+        this.mode = 'mp';
+        this.isHost = false;
+        this.mySlot = 'human';
+        document.getElementById('start-screen').style.display = 'none';
+        document.getElementById('game-screen').style.display = 'flex';
+        this.targetScore = state.targetScore;
+        this.dealer = swap(state.dealer);
+        this.trumpSuit = state.trumpSuit;
+        this.turnUpCard = objToCard(state.turnUpCard);
+        this.maker = swap(state.maker);
+        this.phase = state.phase;
+        this.turn = swap(state.turn);
+        this.firstCardPlayed = !!state.firstCardPlayed;
+        this.meldsRevealed = !!state.meldsRevealed;
+        this.bellaDeclined = { human: false, ai: false };
+        this.remotePlayLocked = false;
+        this.scores = { human: state.scores.ai, ai: state.scores.human };
+        this.meldPoints = { human: state.meldPoints.ai, ai: state.meldPoints.human };
+        this.bellaPoints = state.bellaPoints
+            ? { human: state.bellaPoints.ai, ai: state.bellaPoints.human }
+            : { human: 0, ai: 0 };
+        this.trickPoints = { human: state.trickPoints.ai, ai: state.trickPoints.human };
+        this.tricksCount = { human: state.tricksCount.ai, ai: state.tricksCount.human };
+        this.hands = {
+            human: state.hands.ai.map(objToCard),
+            ai: state.hands.human.map(objToCard)
+        };
+        this.meldHandsSnapshot = {
+            human: state.meldHandsSnapshot.ai.map(objToCard),
+            ai: state.meldHandsSnapshot.human.map(objToCard)
+        };
+        this.playedCards = state.playedCards.map(pc => pc ? { player: swap(pc.player), card: objToCard(pc.card) } : null);
+        // Map declared melds to local hands (host human -> local ai, host opponent -> local human)
+        const mapSeqs = (declaredArr, hand) => this.idsToSeqs(declaredArr, hand);
+        this.humanDeclaredMelds = mapSeqs(state.declaredMelds?.opponent || [], this.hands.human);
+        this.opponentDeclaredMelds = mapSeqs(state.declaredMelds?.human || [], this.hands.ai);
+        this.highlightCards = state.highlightCards ? 
+            { human: state.highlightCards.ai, ai: state.highlightCards.human } :
+            { human: [], ai: [] };
+        this.humanMeldCalled = !!state.opponentMeldCalled;
+        this.opponentMeldCalled = !!state.humanMeldCalled;
+        this.pendingRemotePlay = false;
+        this.clearAiPlayTimer();
+        this.meldResolved = !!state.meldResolved;
+        if (this.meldResolved || this.firstCardPlayed) {
+            this.clearMeldButtons();
+        }
+
+        Net.setStatus("Host started. You're connected.");
+        this.renderTurnUp();
+        this.refreshLogUI();
+        this.renderTableSlots();
+
+        if (state.jassusAnimation) {
+            this.triggerJassusAnimation();
+        }
+
+        if (state.trickAnimation) {
+            setTimeout(() => {
+                const winner = swap(state.trickAnimation.winner);
+                const aiCardEl = document.querySelector('#slot-ai .card');
+                const humanCardEl = document.querySelector('#slot-human .card');
+                const animClass = winner === 'human' ? 'trick-win-anim-human' : 'trick-win-anim-ai';
+                // Force a reflow before applying animation so Chrome/guest paints the start state
+                if (aiCardEl) aiCardEl.getBoundingClientRect();
+                if (humanCardEl) humanCardEl.getBoundingClientRect();
+                if (aiCardEl) aiCardEl.classList.add(animClass);
+                if (humanCardEl) humanCardEl.classList.add(animClass);
+            }, 30); // allow DOM paint before animating
+        }
+
+        this.refreshDixButton();
+        if (this.phase === 'play' && !this.firstCardPlayed && !this.meldResolved) this.setupHumanMelds();
+        this.updateScoreboard();
+        // UI flags
+        document.getElementById('result-modal').classList.toggle('hidden', !(state.ui?.resultOpen));
+        // Keep HUD scoreboard visible on mobile; round modal visibility handled elsewhere
+        if (state.ui?.resultDetail) document.getElementById('result-detail').innerHTML = state.ui.resultDetail;
+        if (state.ui?.resultTitle) document.getElementById('result-title').innerText = state.ui.resultTitle;
+        if (state.ui?.resultActionText) document.getElementById('result-action').innerText = state.ui.resultActionText;
+        if (state.ui?.resultActionText) {
+            const action = state.ui.resultActionText === 'New Game' ? 'location.reload()' : 'Game.startRound()';
+            document.getElementById('result-action').setAttribute('onclick', action);
+        }
+        if (state.ui?.roundBreakdown) document.getElementById('round-breakdown').innerHTML = state.ui.roundBreakdown;
+        if (state.ui?.historyHTML) document.getElementById('history-table').innerHTML = state.ui.historyHTML;
+        const historyContainer = document.getElementById('history-container');
+        if (historyContainer && typeof state.ui?.historyVisible === 'boolean') {
+            historyContainer.classList.toggle('hidden', !state.ui.historyVisible);
+        }
+        document.getElementById('bidding-modal').classList.add('hidden');
+        document.getElementById('suit-picker-modal').classList.add('hidden');
+        this.refreshDixButton(); // compute locally so guests can choose to swap
+        if (state.trickAnimation) return; // prevent immediate re-render; next state will continue flow
+        // If a result modal is open on the host, mirror the win message/animation locally
+        const resultOpen = !!(state.ui?.resultOpen);
+        const winMsgEl = document.getElementById('win-message');
+        if (resultOpen && winMsgEl) {
+            const gameOver = (state.ui?.resultTitle === 'Game Over') || (this.scores.human >= this.targetScore || this.scores.ai >= this.targetScore);
+            if (gameOver) {
+                const humanWon = this.scores.human > this.scores.ai;
+                winMsgEl.innerText = humanWon ? 'YOU WON!' : 'YOU LOST!';
+                winMsgEl.classList.toggle('lost', !humanWon);
+                winMsgEl.classList.remove('hidden');
+                if (!winMsgEl.dataset.fired) {
+                    if (humanWon) this.triggerWinAnimation(); else this.triggerLossAnimation();
+                    winMsgEl.dataset.fired = '1';
+                }
+            } else {
+                winMsgEl.classList.add('hidden');
+                delete winMsgEl.dataset.fired;
+            }
+        } else if (winMsgEl) {
+            winMsgEl.classList.add('hidden');
+            delete winMsgEl.dataset.fired;
+        }
+        this.processTurn();
+    },
+
+    handleRemoteAction(packet) {
+        if (!packet || !this.isHost || this.mode !== 'mp') return;
+        const { type } = packet;
+        if (type === 'bid') {
+            this.handleBid(packet.action, packet.suit);
+        } else if (type === 'play') {
+            if (this.remotePlayLocked || this.phase !== 'play' || this.turn !== 'ai' || this.playedCards.length >= 2) {
+                Net.sendState();
+                return;
+            }
+            this.remotePlayLocked = true; // keep locked until the card is fully applied
+            this.playCard('ai', packet.index);
+        } else if (type === 'dix') {
+            this.swapDix('ai');
+        } else if (type === 'bella') {
+            if (packet.call) {
+                this.bellaCalled.ai = true;
+                this.bellaPoints.ai += BELLA_POINTS;
+                this.log(`${this.opponentLabel()} called Bella! (+${BELLA_POINTS} pts)`);
+                this.triggerBellaAnimation();
+            }
+        } else if (type === 'meld') {
+            if (this.meldResolved) return;
+            const seqs = this.idsToSeqs(packet.payload || [], this.hands.ai, this.meldHandsSnapshot.ai);
+            this.opponentDeclaredMelds = seqs;
+            this.opponentMeldCalled = true;
+            const desc = seqs.map(s => this.describeSeq(s)).filter(Boolean).join(', ');
+            if (desc) this.log(`${this.opponentLabel()} declared a meld.`);
+            this.setMeldHighlight('ai', seqs);
+            if (this.mode === 'mp' && this.isHost) {
+                Net.sendState();
+            }
+        }
+    },
+
+    refreshLogUI() {
+        const log = document.getElementById('game-log');
+        log.innerHTML = '';
+        (this.logHistory || []).forEach(msg => {
+            const div = document.createElement('div');
+            div.innerText = `> ${msg}`;
+            log.appendChild(div);
+        });
+        log.scrollTop = log.scrollHeight;
+    },
+
+    showRulesModal() {
+        const modal = document.getElementById('rules-modal');
+        if (modal) modal.classList.remove('hidden');
+    },
+
+    hideRulesModal() {
+        const modal = document.getElementById('rules-modal');
+        if (modal) modal.classList.add('hidden');
+    },
+
+    init() {
+        this.mode = document.querySelector('input[name="mode"]:checked').value;
+        this.isHost = (this.mode === 'mp') ? Net.isHost : true;
+        this.gameStartedOnClient = false;
+        this.mySlot = 'human'; // always treat local player as human perspective
+        this.targetScore = parseInt(document.getElementById('target-score').value);
+        this.difficulty = document.getElementById('difficulty').value;
+        this.scores = { human: 0, ai: 0 };
+        this.dealer = Math.random() < 0.5 ? 'human' : 'ai';
+        this.resetLogs();
+        this.remotePlayLocked = false;
+        this.awaitingDixChoice = false;
+        this.dixWaitLogged = false;
+        this.highlightCards = { human: [], ai: [] };
+        this.highlightTimers = { human: null, ai: null };
+        this.humanDeclaredMelds = [];
+        this.opponentDeclaredMelds = [];
+        this.prevTurn = null;
+        this.roundHistory = [];
+        this.gameEnded = false;
+        this.humanMeldCalled = false;
+        this.opponentMeldCalled = false;
+        this.meldResolved = false;
+        
+        if (this.mode === 'mp') {
+            if (!Net.isConnected()) {
+                alert("Connect to your opponent before starting.");
+                return;
+            }
+            if (!this.isHost) {
+                alert("Waiting for the host to start.");
+                return;
+            }
+        }
+        
+        document.getElementById('start-screen').style.opacity = 0;
+        setTimeout(() => {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('game-screen').style.display = 'flex';
+            AudioManager.playMusic(true);
+            this.updateScoreboard();
+            this.hideRulesModal();
+            this.startRound();
+            if (this.mode === 'mp') {
+                Net.sendState();
+            } else {
+                this.comment('intro');
+            }
+        }, 500);
+    },
+
+    startRound() {
+        if (this.mode === 'mp' && !this.isHost) return;
+        if (this.scores.human >= this.targetScore || this.scores.ai >= this.targetScore) {
+            this.endGame();
+            return;
+        }
+
+        this.deck = this.createDeck();
+        this.hands = { human: [], ai: [] };
+        this.trumpSuit = null;
+        this.turnUpCard = null;
+        this.maker = null;
+        this.tricks = [];
+        this.currentTrick = [];
+        this.playedCards = [];
+        this.meldPoints = { human: 0, ai: 0 };
+        this.bellaPoints = { human: 0, ai: 0 };
+        this.trickPoints = { human: 0, ai: 0 };
+        this.tricksCount = { human: 0, ai: 0 };
+        this.blackHandBonus = { human: 0, ai: 0 };
+        this.humanDeclaredMelds = [];
+        this.opponentDeclaredMelds = [];
+        this.bellaCalled = { human: false, ai: false };
+        this.bellaDeclined = { human: false, ai: false };
+        this.bellaPieces = { human: [], ai: [] };
+        this.lastTrickWinner = null;
+        this.lastRoundStats = null;
+        this.highlightCards = { human: [], ai: [] };
+        this.highlightTimers = { human: null, ai: null };
+        this.prevTurn = null;
+        this.meldResolved = false;
+        this.firstCardPlayed = false;
+        this.meldsRevealed = false;
+        this.humanHasPlayed = false;
+        this.meldHandsSnapshot = { human: [], ai: [] };
+        this.humanMeldCalled = false;
+        this.opponentMeldCalled = false;
+        this.pendingRemotePlay = false;
+        this.clearAiPlayTimer();
+        this.meldWaitLogged = false;
+        this.awaitingDixChoice = false;
+        this.dixWaitLogged = false;
+        this.remotePlayLocked = false;
+        
+        document.getElementById('dix-btn').classList.add('hidden');
+        document.getElementById('result-modal').classList.add('hidden');
+        const scoreboard = document.getElementById('scoreboard');
+        if (scoreboard) scoreboard.style.display = '';
+        this.hideRulesModal();
+        this.clearMeldButtons();
+        document.getElementById('slot-ai').innerHTML = '';
+        document.getElementById('slot-human').innerHTML = '';
+        document.getElementById('trump-display').innerHTML = '';
+        document.getElementById('ai-chat-bubble').style.opacity = 0;
+        
+        this.dealer = (this.dealer === 'human') ? 'ai' : 'human';
+        this.log(`New Round. Dealer: ${this.getPlayerIdentifier(this.dealer)}.`);
+
+        this.dealCards(6, true);
+        this.turnUpCard = this.deck.pop();
+        this.renderTurnUp();
+        playSound('deal');
+        
+        this.phase = 'bid1';
+        this.turn = (this.dealer === 'human') ? 'ai' : 'human'; 
+        
+        // Removed redundant updateUI here to fix double deal glitch
+        this.processTurn();
+        if (this.mode === 'mp') Net.sendState();
+    },
+
+    createDeck() {
+        let deck = [];
+        for (let s of SUITS) {
+            for (let r of RANKS) {
+                deck.push(new Card(s, r));
+            }
+        }
+        for (let i = deck.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [deck[i], deck[j]] = [deck[j], deck[i]];
+        }
+        return deck;
+    },
+
+    dealCards(count, animate = false) {
+        if (animate) this.animatingDeal = true;
+        
+        for(let i=0; i<count; i++) {
+            this.hands.human.push(this.deck.pop());
+            this.hands.ai.push(this.deck.pop());
+        }
+        this.sortHand(this.hands.human);
+        this.sortHand(this.hands.ai);
+
+        if (animate) {
+            setTimeout(() => this.animatingDeal = false, 2000); 
+        }
+    },
+
+    sortHand(hand) {
+        hand.sort((a,b) => {
+            if(a.suit !== b.suit) return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
+            return SEQUENCE_ORDER.indexOf(a.rank) - SEQUENCE_ORDER.indexOf(b.rank);
+        });
+    },
+
+    processTurn() {
+        if (this.phase === 'play' && this.turn === this.mySlot) {
+            this.isUiLocked = false;
+        }
+        if (this.phase !== 'play') this.clearAiPlayTimer();
+        this.updateUI();
+
+        if (this.mode === 'mp' && this.turn !== 'human') {
+            return; // Wait for the remote player
+        }
+
+        if (this.phase === 'bid1' || this.phase === 'bid2') {
+            document.body.classList.add('in-bidding');
+            if (this.turn === 'ai') {
+                setTimeout(() => this.aiBid(), 1000);
+            } else {
+                if (this.phase === 'bid1') {
+                    document.getElementById('bidding-modal').classList.remove('hidden');
+                    document.getElementById('bid-card-display').innerHTML = this.turnUpCard.getHTML();
+                } else {
+                    document.getElementById('suit-picker-modal').classList.remove('hidden');
+                    const buttons = document.querySelectorAll('.suit-btn');
+                    buttons.forEach((btn, idx) => {
+                        if (SUITS[idx] === this.turnUpCard.suit) btn.disabled = true;
+                        else btn.disabled = false;
+                    });
+                    const isBimah = (this.turn === this.dealer && this.phase === 'bid2');
+                    const passBtn = document.getElementById('btn-pass2');
+                    const ntBtn = document.getElementById('btn-notrump');
+                    const title = document.getElementById('suit-picker-title');
+
+                    if (isBimah) {
+                        passBtn.classList.add('hidden');
+                        ntBtn.classList.remove('hidden');
+                        title.innerText = "Bimah! You must pick a suit or No Trump.";
+                    } else {
+                        passBtn.classList.remove('hidden');
+                        ntBtn.classList.add('hidden');
+                        title.innerText = "Pick a Trump Suit";
+                    }
+                }
+            }
+        } else if (this.phase === 'play') {
+            if (this.turn === 'ai') {
+                // Pause AI lead if human can still choose to swap the 7
+                if (this.awaitingDixChoice && this.mode !== 'mp' && !this.firstCardPlayed) {
+                    if (!this.dixWaitLogged) {
+                        this.log("You can swap the 7 before play starts. Swap or continue.");
+                        this.dixWaitLogged = true;
+                    }
+                    this.isUiLocked = false;
+                    return;
+                }
+                // Give the human time to call/skip melds before the first card is played
+                if (!this.firstCardPlayed && !this.meldResolved && this.mode !== 'mp') {
+                    const sourceHand = (this.meldHandsSnapshot && this.meldHandsSnapshot.human.length)
+                        ? this.meldHandsSnapshot.human
+                        : this.hands.human;
+                    const humanHasMeld = !!this.bestSeq(this.getSequences(sourceHand));
+                    if (humanHasMeld && !this.humanMeldCalled) {
+                        if (!this.meldWaitLogged) {
+                            this.log("You can call a meld before play starts. Call or Skip to continue.");
+                            this.meldWaitLogged = true;
+                        }
+                        this.isUiLocked = false;
+                        return;
+                    }
+                }
+                this.scheduleAiPlay(1200);
+            }
+        }
+    },
+
+    handleBid(action, suit = null) {
+        if (this.mode === 'mp' && !this.isHost) {
+            Net.sendAction({ type: 'bid', action, suit });
+            document.getElementById('bidding-modal').classList.add('hidden');
+            document.getElementById('suit-picker-modal').classList.add('hidden');
+            return;
+        }
+        const actor = this.turn; 
+        const isDealer = (this.dealer === 'human');
+        
+        document.getElementById('bidding-modal').classList.add('hidden');
+        document.getElementById('suit-picker-modal').classList.add('hidden');
+
+        if (this.phase === 'bid1') {
+            if (action === 'take') {
+                this.setTrump(this.turnUpCard.suit, actor);
+            } else {
+                this.log(`${this.getPlayerIdentifier(actor)} passed.`);
+                if (actor !== this.dealer) {
+                    this.turn = this.dealer;
+                    this.processTurn();
+                } else {
+                    this.phase = 'bid2';
+                    this.log("Round 1 passed. Phase 2 (Any Suit).");
+                    this.turn = (this.dealer === 'human') ? 'ai' : 'human';
+                    this.processTurn();
+                }
+            }
+        } else if (this.phase === 'bid2') {
+            if (action === 'pass2') {
+                if (actor === this.dealer) return;
+                this.log(`${this.getPlayerIdentifier(actor)} passed.`);
+                if (actor === this.dealer) {
+                     // Should be unreachable in Bimah logic
+                } else {
+                    this.turn = this.dealer;
+                    this.processTurn();
+                }
+            } else {
+                this.setTrump(suit, actor);
+            }
+        }
+    },
+
+    setTrump(suit, maker) {
+        document.body.classList.remove('in-bidding');
+        this.trumpSuit = suit;
+        this.maker = maker;
+        
+        const displaySuit = suit === 'NT' ? 'No Trump' : SYMBOLS[suit];
+        this.log(`${this.getPlayerIdentifier(maker)} chose ${displaySuit} as Trump.`);
+
+        const trumpDisplay = document.getElementById('trump-display');
+        if (suit) {
+            const makerName = this.getPlayerIdentifier(maker);
+            const symbol = SYMBOLS[suit];
+            const color = COLORS[suit];
+            
+            let cardHTML;
+            if (suit === 'NT') {
+                // Special display for No Trump
+                cardHTML = `<div class="card trump-card" style="font-size: 24px; display: flex; align-items: center; justify-content: center; font-weight: bold;">NT</div>`;
+            } else {
+                cardHTML = `
+                    <div class="card trump-card ${color}">
+                        <div class="card-top"></div>
+                        <div class="card-center">${symbol}</div>
+                        <div class="card-bottom"></div>
+                    </div>
+                `;
+            }
+            
+            trumpDisplay.innerHTML = `
+                <div style="text-align: center; font-size: 14px; margin-bottom: 4px; font-family: 'Segoe UI', sans-serif;">Trump Suit: ${makerName}</div>
+                ${cardHTML}
+            `;
+        } else {
+            trumpDisplay.innerHTML = '';
+        }
+        
+        if (maker === 'ai' && this.mode !== 'mp') this.comment('ai_trump');
+
+        this.dealCards(3, true); 
+        
+        this.phase = 'play';
+        
+        if (this.trumpSuit !== 'NT' && this.trumpSuit === this.turnUpCard.suit) {
+             this.checkForDix('human');
+             this.checkForDix('ai');
+        }
+
+        // Save meld snapshot before any cards are played
+        this.updateMeldSnapshot();
+
+        // Setup Manual Melds for User
+        this.setupHumanMelds();
+
+        // Reset Dix prompt flags
+        this.awaitingDixChoice = false;
+        this.dixWaitLogged = false;
+
+        this.turn = (this.dealer === 'human') ? 'ai' : 'human';
+        // Removed redundant updateUI here to fix double deal glitch
+        this.processTurn();
+        if (this.mode === 'mp') Net.sendState();
+    },
+
+    pickSuit(suit) {
+        this.handleBid('pick', suit);
+    },
+
+    checkForDix(player) {
+        const hand = this.hands[player];
+        const dixIdx = hand.findIndex(c => c.rank === '7' && c.suit === this.trumpSuit);
+        if (dixIdx !== -1) {
+            if (player === 'human') {
+                document.getElementById('dix-btn').classList.remove('hidden');
+                if (this.mode !== 'mp') {
+                    this.awaitingDixChoice = true;
+                }
+            } else { // This is the AI's logic
+                if (this.mode === 'mp') {
+                    return; // let the remote player choose to swap on their client
+                }
+                if (this.difficulty !== 'easy') {
+                    const oldBest = this.bestSeq(this.getSequences(hand.slice())); // Check on a copy before mutating
+
+                    this.log(`${this.opponentLabel()} swaps the 7 for the turn-up card.`);
+                    const dix = hand.splice(dixIdx, 1)[0];
+                    hand.push(this.turnUpCard);
+                    this.turnUpCard = dix; 
+                    this.sortHand(hand);
+                    this.updateMeldSnapshot('ai');
+
+                    const newBest = this.bestSeq(this.getSequences(hand));
+                    let isNewOrBetter = false;
+                    if (newBest && !oldBest) {
+                        isNewOrBetter = true;
+                    } else if (newBest && oldBest) {
+                        // Check if it's actually a different meld
+                        if (newBest.map(c => c.id).join(',') !== oldBest.map(c => c.id).join(',')) {
+                            const newScore = this.scoreSeq(newBest);
+                            const oldScore = this.scoreSeq(oldBest);
+                            if (newScore.points > oldScore.points || (newScore.points === oldScore.points && newScore.height > oldScore.height)) {
+                                isNewOrBetter = true;
+                            }
+                        }
+                    }
+
+                    if (isNewOrBetter) {
+                        this.log(`${this.opponentLabel()} has formed a meld: ${this.describeSeq(newBest)}`);
+                    }
+
+                    this.renderTurnUp(); // Update the visual reference
+                }
+            }
+        }
+    },
+
+    swapDix(player) {
+        const playerToAct = player || 'human';
+
+        // On guest client, send action to host. `player` will be undefined here from button click.
+        if (playerToAct === 'human' && this.mode === 'mp' && !this.isHost) {
+            Net.sendAction({ type: 'dix' });
+            return;
+        }
+
+        if (!this.trumpSuit || this.trumpSuit === 'NT') {
+            if (playerToAct === 'human') this.log("Swap the 7 only after a trump suit has been chosen.");
+            return;
+        }
+        
+        // This check is for the local human player. It's mostly handled by button visibility.
+        if (playerToAct === 'human' && this.humanHasPlayed) {
+            this.log("You can only swap the 7 before you play your first card.");
+            return;
+        }
+        
+        const hand = this.hands[playerToAct];
+        const dixIdx = hand.findIndex(c => c.rank === '7' && c.suit === this.trumpSuit);
+
+        if (dixIdx !== -1) {
+            const dix = hand.splice(dixIdx, 1)[0];
+            hand.push(this.turnUpCard);
+            this.turnUpCard = dix;
+            this.sortHand(hand);
+            this.updateMeldSnapshot(playerToAct);
+            this.log(`${this.getPlayerIdentifier(playerToAct)} swapped the 7.`);
+
+            if (playerToAct === 'human') {
+                document.getElementById('dix-btn').classList.add('hidden');
+                this.awaitingDixChoice = false;
+                this.dixWaitLogged = false;
+                this.setupHumanMelds();
+                const hasNewMeld = this.getSequences(hand).length > 0;
+                
+                // If swapping created a meld and it's AI's turn to lead,
+                // we need to re-run processTurn to pause the AI and wait for human meld declaration.
+                if (hasNewMeld && this.mode !== 'mp' && this.turn === 'ai' && !this.firstCardPlayed) {
+                    this.clearAiPlayTimer();
+                    this.processTurn();
+                }
+            }
+
+            this.updateUI();
+            this.renderTurnUp();
+            if (this.mode === 'mp' && this.isHost) Net.sendState();
+        }
+    },
+
+    // --- MELD LOGIC ---
+
+    // 1. Analyze Hand for Sequences
+    getSequences(hand) {
+        let seqs = [];
+        const pushSubSequences = (run) => {
+            if (run.length < 3) return;
+            for (let start = 0; start <= run.length - 3; start++) {
+                const maxLen = Math.min(4, run.length - start); // only TWENTY (3) or FIFTY (4)
+                for (let len = 3; len <= maxLen; len++) {
+                    seqs.push(run.slice(start, start + len));
+                }
+            }
+        };
+        SUITS.forEach(s => {
+            const suitCards = hand.filter(c => c.suit === s).sort((a,b) => SEQUENCE_ORDER.indexOf(a.rank) - SEQUENCE_ORDER.indexOf(b.rank));
+            if (suitCards.length < 3) return;
+            let currentSeq = [suitCards[0]];
+            for (let i = 1; i < suitCards.length; i++) {
+                const prevRankIdx = SEQUENCE_ORDER.indexOf(currentSeq[currentSeq.length-1].rank);
+                const currRankIdx = SEQUENCE_ORDER.indexOf(suitCards[i].rank);
+                if (currRankIdx === prevRankIdx + 1) {
+                    currentSeq.push(suitCards[i]);
+                } else {
+                    pushSubSequences(currentSeq);
+                    currentSeq = [suitCards[i]];
+                }
+            }
+            pushSubSequences(currentSeq);
+        });
+        return seqs;
+    },
+
+    scoreSeq(seq) {
+        const len = seq.length;
+        const height = SEQUENCE_ORDER.indexOf(seq[len-1].rank); 
+        let points = (len >= 4) ? MELD_FIFTY : MELD_TWENTY; // 3 cards = 20, 4+ cards = 50
+        const isTrump = (this.trumpSuit !== 'NT' && seq[0].suit === this.trumpSuit);
+        return { points, len, height, isTrump, suit: seq[0].suit };
+    },
+    bestSeq(seqs) {
+        if (!seqs || !seqs.length) return null;
+        return seqs.reduce((best, cur) => {
+            const b = best ? this.scoreSeq(best) : null;
+            const c = this.scoreSeq(cur);
+            if (!b) return cur;
+            if (c.points !== b.points) return (c.points > b.points) ? cur : best;
+            if (c.height !== b.height) return (c.height > b.height) ? cur : best;
+            if (c.isTrump !== b.isTrump) return c.isTrump ? cur : best;
+            return (this.suitRank(c.suit) < this.suitRank(b.suit)) ? cur : best; // lower suit rank wins tie
+        }, null);
+    },
+
+    checkMeldResolutionReadiness() {
+        if (this.meldResolved) return false;
+        if (this.mode !== 'mp' || !this.isHost) return false;
+        return this.humanMeldCalled && this.opponentMeldCalled;
+    },
+
+    // 2. Setup UI for Human Calls
+    setupHumanMelds() {
+        if (window.matchMedia("(max-width: 768px)").matches) {
+            // This is now handled by updateActionModal
+            this.clearMeldButtons();
+            return;
+        }
+
+        if (this.trumpSuit === 'NT' || this.meldResolved || this.humanMeldCalled) {
+            this.clearMeldButtons();
+            return;
+        }
+
+        const sourceHand = (this.meldHandsSnapshot && this.meldHandsSnapshot.human.length) ? this.meldHandsSnapshot.human : this.hands.human;
+        const best = this.bestSeq(this.getSequences(sourceHand));
+        if (!best) return;
+
+        const info = this.scoreSeq(best);
+        const name = info.points === 50 ? "FIFTY" : "TWENTY";
+        
+        const callBtn = document.createElement('button');
+        callBtn.className = 'meld-btn';
+        callBtn.innerText = `Call ${name}`;
+        callBtn.onclick = () => this.callMelds();
+
+        const container = this.getMeldButtonContainer();
+        container.innerHTML = '';
+        container.appendChild(callBtn);
+        
+        if (this.mode !== 'mp' && this.turn === 'ai' && !this.firstCardPlayed && !this.meldResolved) {
+            const skipBtn = document.createElement('button');
+            skipBtn.innerText = 'Skip Meld';
+            skipBtn.onclick = () => this.skipMelds();
+            container.appendChild(skipBtn);
+        }
+    },
+
+    callMelds() {
+        if (this.meldResolved || this.firstCardPlayed || this.humanMeldCalled) {
+            this.log("Meld calls are closed.");
+            return;
+        }
+        if (this.trumpSuit === 'NT') {
+            this.log("Cannot call melds in a No Trump round.");
+            return;
+        }
+        const sourceHand = (this.meldHandsSnapshot && this.meldHandsSnapshot.human.length) ? this.meldHandsSnapshot.human : this.hands.human;
+        const seqs = this.getSequences(sourceHand);
+        if (seqs.length === 0) {
+            this.log("No sequences to call.");
+            return;
+        }
+        const best = this.bestSeq(seqs);
+        if (!best) {
+            this.log("No sequences to call.");
+            return;
+        }
+        this.humanDeclaredMelds = [best];
+        this.log(`${this.getPlayerIdentifier('human')} declared a meld.`);
+        this.humanMeldCalled = true;
+        this.setMeldHighlight('human', [best]);
+        const container = this.getMeldButtonContainer();
+        if (container) container.innerHTML = '';
+        playSound('meld');
+        this.updateUI();
+        this.resumeAiAfterMeld();
+        if (this.mode === 'mp') {
+            const payload = [best.map(c => c.id)];
+            if (!this.isHost) {
+                Net.sendAction({ type: 'meld', payload });
+            } else {
+                Net.sendState();
+            }
+        }
+    },
+
+    skipMelds() {
+        if (this.mode === 'mp') return; // guests/hosts handle melds explicitly
+        if (this.meldResolved || this.firstCardPlayed) return;
+        const sourceHand = (this.meldHandsSnapshot && this.meldHandsSnapshot.human.length)
+            ? this.meldHandsSnapshot.human
+            : this.hands.human;
+        const best = this.bestSeq(this.getSequences(sourceHand));
+        if (!best) return;
+        this.humanDeclaredMelds = [];
+        this.humanMeldCalled = true;
+        this.clearMeldButtons();
+        this.log("You skipped calling a meld.");
+        this.updateUI();
+        this.hideActionModal();
+        this.resumeAiAfterMeld();
+    },
+
+    // 3. Resolve Melds (triggered once the human plays their first card)
+    resolveMelds() {
+        if (this.meldResolved) return;
+        this.meldResolved = true;
+        this.clearMeldButtons();
+        if (this.trumpSuit === 'NT') {
+            this.log("Melds do not count in No Trump rounds.");
+            return;
+        }
+        // AI/remote melds: in MP rely on opponent declarations, otherwise auto-detect AI sequences
+        const aiHandForMeld = (this.meldHandsSnapshot && this.meldHandsSnapshot.ai && this.meldHandsSnapshot.ai.length)
+            ? this.meldHandsSnapshot.ai
+            : this.hands.ai;
+        const aSeqs = (this.mode === 'mp') ? this.opponentDeclaredMelds : this.getSequences(aiHandForMeld);
+        // In single-player, if the user never clicked Call, auto-consider their best meld
+        if (this.mode !== 'mp' && (!this.humanDeclaredMelds || !this.humanDeclaredMelds.length)) {
+            const sourceHand = (this.meldHandsSnapshot && this.meldHandsSnapshot.human.length)
+                ? this.meldHandsSnapshot.human
+                : this.hands.human;
+            const best = this.bestSeq(this.getSequences(sourceHand));
+            if (best) {
+                this.humanDeclaredMelds = [best];
+            }
+        }
+        const hSeqs = this.humanDeclaredMelds; // Only what human clicked (local user) or auto-detected in SP
+        const hBest = this.bestSeq(hSeqs);
+        const aBest = this.bestSeq(aSeqs);
+
+        let winner = null;
+        let winningSeq = null;
+        if (hBest && !aBest) { winner = 'human'; winningSeq = hBest; }
+        else if (!hBest && aBest) { winner = 'ai'; winningSeq = aBest; }
+        else if (hBest && aBest) {
+            const hb = this.scoreSeq(hBest);
+            const ab = this.scoreSeq(aBest);
+            if (hb.points !== ab.points) winner = hb.points > ab.points ? 'human' : 'ai';
+            else if (hb.height !== ab.height) winner = hb.height > ab.height ? 'human' : 'ai';
+            else if (hb.isTrump !== ab.isTrump) winner = hb.isTrump ? 'human' : 'ai';
+            else {
+                const hSuitRank = this.suitRank(hb.suit);
+                const aSuitRank = this.suitRank(ab.suit);
+                if (hSuitRank !== aSuitRank) winner = hSuitRank < aSuitRank ? 'human' : 'ai';
+            }
+            winningSeq = winner === 'human' ? hBest : aBest;
+        }
+
+        // Reveal only the winning meld to both players
+        this.highlightCards = { human: [], ai: [] };
+        if (winner === 'human' && hBest) this.setHighlights('human', [hBest]);
+        if (winner === 'ai' && aBest) this.setHighlights('ai', [aBest]);
+        this.meldsRevealed = true;
+
+        if (winner === 'human' && hBest) {
+            const pts = this.scoreSeq(hBest).points;
+            this.meldPoints.human += pts;
+            this.log(`${this.getPlayerIdentifier('human')} won melds: ${pts} pts. (${this.describeSeq(hBest)})`);
+            if (this.isBellaInSeq(hBest) && !this.bellaCalled.human) {
+                this.bellaPoints.human += BELLA_POINTS;
+                this.bellaCalled.human = true;
+                this.log(`${this.getPlayerIdentifier('human')} scored Bella within the meld! (+${BELLA_POINTS} pts)`);
+                this.triggerBellaAnimation();
+            }
+            if (pts > 0) playSound('meld');
+        } else if (winner === 'ai' && aBest) {
+            const pts = this.scoreSeq(aBest).points;
+            this.meldPoints.ai += pts;
+            this.log(`${this.getPlayerIdentifier('ai')} won melds: ${pts} pts. (${this.describeSeq(aBest)})`);
+            if (this.isBellaInSeq(aBest) && !this.bellaCalled.ai) {
+                this.bellaPoints.ai += BELLA_POINTS;
+                this.bellaCalled.ai = true;
+                this.log(`${this.getPlayerIdentifier('ai')} scored Bella within the meld! (+${BELLA_POINTS} pts)`);
+                this.triggerBellaAnimation();
+            }
+            if (this.mode !== 'mp') this.comment('meld_win');
+        } else {
+            // tie or none -> no meld points
+        }
+        this.updateUI();
+        // If multiplayer and host, broadcast updated meldPoints/highlights to guest
+        if (this.mode === 'mp' && this.isHost) Net.sendState();
+    },
+
+    checkForBellaInterrupt(player, card) {
+        if (!this.bellaCalled[player] && this.trumpSuit && this.trumpSuit !== 'NT' && card.suit === this.trumpSuit && (card.rank === 'K' || card.rank === 'Q')) {
+            
+            // If player is human, check if Bella is part of their declared meld.
+            if (player === 'human' && this.humanDeclaredMelds && this.humanDeclaredMelds.length > 0) {
+                const declaredBella = this.humanDeclaredMelds.some(seq => this.isBellaInSeq(seq));
+                if (declaredBella) {
+                    return false; // Don't show modal, it will be auto-awarded.
+                }
+            }
+
+            const partnerRank = card.rank === 'K' ? 'Q' : 'K';
+            const hand = this.hands[player];
+            const hasPartnerInHand = hand.some(c => c.id !== card.id && c.suit === this.trumpSuit && c.rank === partnerRank);
+
+            if (hasPartnerInHand) {
+                return true; // Case 1: First piece, partner is in hand.
+            } else {
+                // Case 2: Second piece, partner was already played. Check if user declined first time.
+                const partnerInPastTricks = this.tricks.flatMap(t => t.cards).some(pc =>
+                    pc.player === player && pc.card.suit === this.trumpSuit && pc.card.rank === partnerRank
+                );
+                const partnerInCurrentTrick = this.playedCards.some(pc =>
+                    pc.player === player && pc.card.suit === this.trumpSuit && pc.card.rank === partnerRank
+                );
+
+                if ((partnerInPastTricks || partnerInCurrentTrick) && this.bellaDeclined[player]) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    },
+
+    // --- PLAY LOGIC ---
+
+    playCard(player, cardIndex, ignoreBellaCheck = false) {
+        const isRemoteGuestPlay = (this.mode === 'mp' && this.isHost && player === 'ai');
+        const releaseRemoteLock = () => { if (isRemoteGuestPlay) this.remotePlayLocked = false; };
+
+        // For GUEST client, check for Bella interrupt before sending action to host
+        if (this.mode === 'mp' && !this.isHost && player === 'human') {
+            const card = this.hands.human[cardIndex];
+            if (!this.isValidMove(card, this.hands.human)) {
+                this.log("Invalid move! Follow suit or trump.");
+                return;
+            }
+            if (!ignoreBellaCheck && this.checkForBellaInterrupt('human', card)) {
+                this.pendingBellaCard = cardIndex; // Store which card is pending
+                document.getElementById('bella-modal').classList.remove('hidden');
+                return; // Wait for modal confirmation
+            }
+            // If no Bella interrupt, proceed to send action to host
+            if (this.pendingRemotePlay) return;
+            this.pendingRemotePlay = true;
+            this.isUiLocked = true;
+            Net.sendAction({ type: 'play', index: cardIndex });
+            return;
+        }
+
+        // --- HOST-ONLY (and single player) LOGIC ---
+        if (isRemoteGuestPlay) this.remotePlayLocked = true;
+        
+        if (player === 'human' && this.isUiLocked) return;
+
+        if (this.phase !== 'play' || (player !== this.turn && !isRemoteGuestPlay) || this.playedCards.length >= 2) {
+            if (player === 'human') this.isUiLocked = false;
+            releaseRemoteLock();
+            return;
+        }
+
+        const hand = this.hands[player];
+        if (!hand || cardIndex < 0 || cardIndex >= hand.length) {
+            if (player === 'human') this.isUiLocked = false;
+            releaseRemoteLock();
+            return;
+        }
+        const card = hand[cardIndex];
+
+        // This check is now only for the HOST player in multiplayer
+        if (player === 'human') {
+            if (!this.isValidMove(card, hand)) {
+                this.log("Invalid move! Follow suit or trump.");
+                this.isUiLocked = false;
+                return;
+            }
+
+            // BELLA CHECK (Interruption) - for HOST player
+            if (!ignoreBellaCheck && this.checkForBellaInterrupt('human', card)) {
+                this.pendingBellaCard = cardIndex;
+                document.getElementById('bella-modal').classList.remove('hidden');
+                this.isUiLocked = false;
+                releaseRemoteLock();
+                return; 
+            }
+            this.isUiLocked = true;
+        }
+
+        if (player === 'human' && !this.humanHasPlayed) {
+            this.humanHasPlayed = true;
+            document.getElementById('dix-btn').classList.add('hidden');
+        }
+
+        // Resolve melds once on the first card of the round (either player)
+        if (!this.meldResolved) {
+            this.firstCardPlayed = true;
+            this.resolveMelds();
+        }
+
+        // ANIMATION & PLAY
+
+        const handId = player === 'human' ? 'human-hand' : 'ai-hand';
+        const cardEl = document.getElementById(handId).children[cardIndex];
+        const slotId = player === 'human' ? 'slot-human' : 'slot-ai';
+        const slotEl = document.getElementById(slotId);
+
+        if (cardEl && slotEl) {
+            const cardRect = cardEl.getBoundingClientRect();
+            const slotRect = slotEl.getBoundingClientRect();
+            const dx = slotRect.left - cardRect.left;
+            const dy = slotRect.top - cardRect.top;
+            cardEl.style.zIndex = 1000;
+            cardEl.style.transition = 'transform 0.4s ease-out';
+            cardEl.style.transform = `translate(${dx}px, ${dy}px) rotate(${Math.random() * 10 - 5}deg)`;
+        }
+
+        setTimeout(() => {
+            if (player === 'human') {
+                this.awaitingDixChoice = false;
+                this.dixWaitLogged = false;
+            }
+            hand.splice(cardIndex, 1);
+            this.playedCards.push({ player, card });
+
+            if (card.rank === 'J' && this.trumpSuit && card.suit === this.trumpSuit) {
+                this.triggerJassusAnimation();
+                if (this.mode === 'mp' && this.isHost) {
+                    this.jassusAnimation = true;
+                    Net.sendState();
+                    delete this.jassusAnimation;
+                }
+            }
+            
+            if (this.trumpSuit !== 'NT' && card.suit === this.trumpSuit && (card.rank === 'K' || card.rank === 'Q')) {
+                this.trackBellaPiece(player, card.rank);
+                
+                if (player === 'ai' && !this.bellaCalled.ai) {
+                    // In SP, 'ai' is the computer. Auto-call. In MP, this logic is skipped for the guest.
+                    if (this.mode !== 'mp') {
+                        const hasK = this.bellaPieces.ai.includes('K');
+                        const hasQ = this.bellaPieces.ai.includes('Q');
+                        if (hasK && hasQ) {
+                            this.bellaCalled.ai = true;
+                            this.bellaPoints.ai += BELLA_POINTS;
+                            this.log(`${this.opponentLabel()} scores Bella (+${BELLA_POINTS}).`);
+                            this.triggerBellaAnimation();
+                            playSound('meld');
+                        }
+                    }
+                }
+            }
+            
+            if (player === 'human') {
+                document.getElementById('slot-human').innerHTML = card.getHTML();
+            } else {
+                document.getElementById('slot-ai').innerHTML = card.getHTML();
+            }
+            this.updateUI();
+
+            if (this.playedCards.length === 2) {
+                setTimeout(() => this.resolveTrick(), 1500);
+            } else {
+                this.turn = (player === 'human') ? 'ai' : 'human';
+                this.processTurn();
+            }
+            if (this.mode === 'mp') Net.sendState();
+            releaseRemoteLock();
+        }, 400); 
+    },
+
+    confirmBella(callIt) {
+        if (this.mode === 'mp' && !this.isHost) {
+            document.getElementById('bella-modal').classList.add('hidden');
+            Net.sendAction({ type: 'bella', call: callIt });
+            return;
+        }
+        document.getElementById('bella-modal').classList.add('hidden');
+        if (callIt) {
+            this.bellaCalled.human = true;
+            this.bellaPoints.human += BELLA_POINTS;
+            this.log(`${this.getPlayerIdentifier('human')} called Bella! (+${BELLA_POINTS} pts)`);
+            this.triggerBellaAnimation();
+            playSound('meld');
+            this.bellaDeclined.human = false; // Reset on successful call
+        } else {
+            this.bellaDeclined.human = true; // Track that user declined
+        }
+        // Proceed with play
+        this.playCard('human', this.pendingBellaCard, true);
+        this.pendingBellaCard = null;
+        if (this.mode === 'mp') Net.sendState();
+    },
+
+    isValidMove(card, hand) {
+        if (this.playedCards.length === 0) return true;
+        const leadCard = this.playedCards[0].card;
+        const leadSuit = leadCard.suit;
+        const hasLeadSuit = hand.some(c => c.suit === leadSuit);
+        
+        if (this.trumpSuit === 'NT') {
+            if (hasLeadSuit && card.suit !== leadSuit) return false;
+            return true;
+        }
+
+        const trumps = hand.filter(c => c.suit === this.trumpSuit);
+        const hasTrump = trumps.length > 0;
+        
+        if (hasLeadSuit && card.suit !== leadSuit) return false;
+        
+        if (!hasLeadSuit) {
+            if (hasTrump && card.suit !== this.trumpSuit) return false;
+            if (leadSuit === this.trumpSuit && card.suit === this.trumpSuit) {
+                const leadPower = leadCard.getPower(this.trumpSuit);
+                const canBeat = trumps.some(c => c.getPower(this.trumpSuit) > leadPower);
+                if (canBeat && card.getPower(this.trumpSuit) < leadPower) return false;
+            }
+        }
+
+        if (leadSuit === this.trumpSuit) {
+            if (card.suit === this.trumpSuit) {
+                const leadVal = leadCard.getPower(this.trumpSuit);
+                const higherTrumps = hand.filter(c => c.suit === this.trumpSuit && c.getPower(this.trumpSuit) > leadVal);
+                if (higherTrumps.length > 0) {
+                     if (card.getPower(this.trumpSuit) < leadVal) return false;
+                }
+            }
+        } else {
+            if (hasLeadSuit) {
+                if (card.suit !== leadSuit) return false; 
+            } else {
+                if (hasTrump && card.suit !== this.trumpSuit) return false;
+            }
+        }
+        return true;
+    },
+
+    resolveTrick() {
+        const c1 = this.playedCards[0];
+        const c2 = this.playedCards[1];
+        let winnerIndex = 0;
+        const leadSuit = c1.card.suit;
+
+        if (this.trumpSuit === 'NT') {
+            if (c2.card.suit === leadSuit) {
+                if (c2.card.getPower('NT') > c1.card.getPower('NT')) winnerIndex = 1;
+            }
+        } else {
+            if (c2.card.suit === leadSuit) {
+                if (c2.card.getPower(this.trumpSuit) > c1.card.getPower(this.trumpSuit)) winnerIndex = 1;
+            } else if (c2.card.suit === this.trumpSuit) {
+                winnerIndex = 1;
+            }
+        }
+
+        const winner = this.playedCards[winnerIndex].player;
+        const points = c1.card.getValue(this.trumpSuit) + c2.card.getValue(this.trumpSuit);
+        
+        this.log(`${this.getPlayerIdentifier(winner)} won trick (${points} pts).`);
+
+        // After the first trick, remove meld highlight overlays
+        if (this.meldsRevealed) {
+            this.highlightCards = { human: [], ai: [] };
+            this.meldsRevealed = false;
+        }
+
+        if (this.mode === 'mp' && this.isHost) {
+            this.trickAnimation = { winner: winner };
+            Net.sendState();
+            delete this.trickAnimation;
+        }
+
+        const aiCardEl = document.querySelector('#slot-ai .card');
+        const humanCardEl = document.querySelector('#slot-human .card');
+        const animClass = winner === 'human' ? 'trick-win-anim-human' : 'trick-win-anim-ai';
+
+        if(aiCardEl) aiCardEl.classList.add(animClass);
+        if(humanCardEl) humanCardEl.classList.add(animClass);
+
+        setTimeout(() => {
+            this.trickPoints[winner] += points;
+            this.tricksCount[winner]++; // Track trick count for Black Hand
+            this.tricks.push({ winner, cards: [c1, c2], points });
+
+            if (winner === 'ai' && points > 15 && Math.random() > 0.5 && this.mode !== 'mp') this.comment('big_trick');
+
+            this.playedCards = [];
+            document.getElementById('slot-ai').innerHTML = '';
+            document.getElementById('slot-human').innerHTML = '';
+            
+            if (this.hands.human.length === 0) {
+                this.trickPoints[winner] += 10;
+                this.lastTrickWinner = winner;
+                this.log(`${this.getPlayerIdentifier(winner)} gets 10 for last trick.`);
+                this.endRound();
+            } else {
+                this.turn = winner; 
+                this.processTurn();
+            }
+            if (this.mode === 'mp') Net.sendState();
+        }, 600);
+    },
+
+    endRound() {
+        // BLACK HAND Check (Bonus 100 if opponent won 0 tricks)
+        let blackHandWinner = null;
+        let blackHandLoser = null;
+        if (this.tricksCount.human === 0) {
+            this.trickPoints.ai += 100;
+            this.blackHandBonus.ai = 100;
+            this.log(`BLACK HAND! ${this.getPlayerIdentifier('ai')} gets +100 bonus.`);
+            blackHandWinner = 'ai';
+            blackHandLoser = 'human';
+        }
+        if (this.tricksCount.ai === 0) {
+            this.trickPoints.human += 100;
+            this.blackHandBonus.human = 100;
+            this.log(`BLACK HAND! ${this.getPlayerIdentifier('human')} gets +100 bonus.`);
+            blackHandWinner = 'human';
+            blackHandLoser = 'ai';
+        }
+
+        // If a Black Hand occurred, the winner also claims the opponent's meld points.
+        if (blackHandWinner && this.meldPoints[blackHandLoser] > 0) {
+            const stolenMeld = this.meldPoints[blackHandLoser];
+            this.meldPoints[blackHandWinner] += stolenMeld;
+            this.meldPoints[blackHandLoser] = 0;
+            this.log(`Black Hand bonus: ${this.getPlayerIdentifier(blackHandWinner)} also claims opponent melds (+${stolenMeld}).`);
+        }
+
+        const hPoints = this.trickPoints.human + this.meldPoints.human + this.bellaPoints.human;
+        const aPoints = this.trickPoints.ai + this.meldPoints.ai + this.bellaPoints.ai;
+        
+        let hFinal = 0, aFinal = 0;
+        let msg = "";
+
+        if (this.maker === 'human') {
+            if (hPoints > aPoints) {
+                hFinal = hPoints;
+                aFinal = aPoints;
+                msg = `${this.getPlayerIdentifier('human')} won the hand.`;
+            } else {
+                aFinal = hPoints + aPoints;
+                hFinal = 0;
+                msg = `${this.getPlayerIdentifier('human')} went Bete! ${this.opponentLabel()} takes all points.`;
+                if (this.mode !== 'mp') this.comment('human_wet');
+            }
+        } else {
+            if (aPoints > hPoints) {
+                aFinal = aPoints;
+                hFinal = hPoints;
+                msg = `${this.opponentLabel()} won the hand.`;
+            } else {
+                hFinal = hPoints + aPoints;
+                aFinal = 0;
+                msg = `${this.opponentLabel()} went Bete! ${this.getPlayerIdentifier('human')} take all points.`;
+                if (this.mode !== 'mp') this.comment('ai_wet');
+            }
+        }
+
+        const stats = this.buildRoundStats(hFinal, aFinal, hPoints, aPoints);
+        this.lastRoundStats = stats;
+        this.scores.human += hFinal;
+        this.scores.ai += aFinal;
+
+        this.updateScoreboard();
+
+        this.recordRoundHistory(stats, msg);
+        const gameOver = (this.scores.human >= this.targetScore || this.scores.ai >= this.targetScore);
+        this.renderResultModal({ stats, msg, gameOver });
+
+        if (gameOver && !this.gameEnded) {
+            this.gameEnded = true;
+            AudioManager.stopMusic();
+            const finalWinner = this.scores.human > this.scores.ai ? 'human' : 'ai';
+            playSound(finalWinner === 'human' ? 'finalwin' : 'finallose');
+        } else if (!gameOver) {
+            if (hFinal > aFinal) playSound('win');
+            else if (aFinal > hFinal) playSound('lose');
+        }
+        if (this.mode === 'mp') Net.sendState();
+    },
+
+    endGame() {
+        if (this.gameEnded) return;
+        this.gameEnded = true;
+        const h = this.scores.human;
+        const a = this.scores.ai;
+        const msg = h > a ? `${this.getPlayerIdentifier('human')} win the match!` : `${this.opponentLabel()} win the match.`;
+        const fallbackStats = {
+            human: { meld: this.meldPoints.human, bella: this.bellaPoints.human, jacks: 0, nines: 0, other: 0, lastTrick: 0, blackHand: 0, trickTotal: 0, collected: h, finalAwarded: h },
+            ai: { meld: this.meldPoints.ai, bella: this.bellaPoints.ai, jacks: 0, nines: 0, other: 0, lastTrick: 0, blackHand: 0, trickTotal: 0, collected: a, finalAwarded: a }
+        };
+        const stats = this.lastRoundStats || fallbackStats;
+        this.renderResultModal({ stats, msg: `${msg} Final score: ${this.getPlayerIdentifier('human')} ${h} - ${this.opponentLabel()} ${a}.`, gameOver: true });
+        AudioManager.stopMusic();
+        if (h > a) playSound('finalwin'); else playSound('finallose');
+    },
+
+    triggerJassusAnimation() {
+        const jassusImg = document.getElementById('jassus-animation');
+        if (!jassusImg) return;
+        jassusImg.classList.remove('hidden', 'bounce', 'bounce-around');
+        jassusImg.classList.add('bounce-around');
+        // Auto-hide after the animation runs so it can be retriggered later
+        setTimeout(() => {
+            jassusImg.classList.add('hidden');
+            jassusImg.classList.remove('bounce-around');
+        }, 1800);
+    },
+
+    triggerBellaAnimation() {
+        const bellaImg = document.getElementById('bella-animation');
+        if (!bellaImg) return;
+        bellaImg.classList.remove('hidden', 'bounce', 'bounce-around');
+        bellaImg.classList.add('bounce-around');
+        setTimeout(() => {
+            bellaImg.classList.add('hidden');
+            bellaImg.classList.remove('bounce-around');
+        }, 1800);
+    },
+
+    triggerWinAnimation() {
+        // 1. Confetti
+        if (typeof confetti === 'function') {
+            const duration = 5 * 1000;
+            const animationEnd = Date.now() + duration;
+            const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 101 };
+
+            function randomInRange(min, max) {
+                return Math.random() * (max - min) + min;
+            }
+
+            const interval = setInterval(function() {
+                const timeLeft = animationEnd - Date.now();
+
+                if (timeLeft <= 0) {
+                    return clearInterval(interval);
+                }
+
+                const particleCount = 50 * (timeLeft / duration);
+                // since particles fall down, start a bit higher than random
+                confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
+                confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
+            }, 250);
+        }
+
+        // 2. Jassus animation
+        const jassusImg = document.getElementById('jassus-animation');
+        if (jassusImg) {
+            jassusImg.classList.remove('hidden', 'bounce'); // remove other anims
+            jassusImg.classList.add('bounce-around');
+        }
+    },
+
+    triggerLossAnimation() {
+        const loserImg = document.getElementById('loser-animation');
+        if (loserImg) {
+            loserImg.classList.remove('hidden');
+            loserImg.classList.add('bounce-around');
+        }
+    },
+
+    // --- AI Logic ---
+    aiBid() {
+        if (this.mode === 'mp') return;
+        const evaluateHand = (suit) => {
+            let pts = 0;
+            this.hands.ai.forEach(c => {
+                if (suit === 'NT') {
+                    if (c.rank === 'A') pts += 20;
+                    else if (c.rank === '10') pts += 15;
+                    else if (c.rank === 'K') pts += 5;
+                    else if (c.rank === 'Q') pts += 4;
+                } else {
+                    if (c.suit === suit) {
+                        if (c.rank === 'J') pts += 40;
+                        else if (c.rank === '9') pts += 25;
+                        else if (c.rank === 'A') pts += 15;
+                        else if (c.rank === '10') pts += 10;
+                        else pts += 5;
+                    } else {
+                        if (c.rank === 'A') pts += 10;
+                    }
+                }
+            });
+            return pts;
+        };
+
+        const threshold = (this.difficulty === 'easy') ? 40 : (this.difficulty === 'hard' ? 65 : 55);
+        
+        if (this.phase === 'bid1') {
+            const val = evaluateHand(this.turnUpCard.suit);
+            if (val > threshold) {
+                this.handleBid('take');
+            } else {
+                this.handleBid('pass');
+            }
+        } else {
+            let bestSuit = null, bestVal = 0;
+            const availableSuits = SUITS.filter(s => s !== this.turnUpCard.suit);
+            if (this.turn === this.dealer) availableSuits.push('NT');
+
+            availableSuits.forEach(s => {
+                const v = evaluateHand(s);
+                if (v > bestVal) { bestVal = v; bestSuit = s; }
+            });
+            
+            if (this.turn === this.dealer) {
+                this.log(`AI forced to play (Bimah). Picking ${bestSuit}.`);
+                this.handleBid('pick', bestSuit);
+            } else {
+                if (bestVal > threshold) {
+                    this.handleBid('pick', bestSuit);
+                } else {
+                    this.handleBid('pass2');
+                }
+            }
+        }
+    },
+
+    aiPlay() {
+        if (this.mode === 'mp') return;
+        const hand = this.hands.ai;
+        const validMoves = hand.map((c, i) => i).filter(i => this.isValidMove(hand[i], hand));
+        let chosenIndex = -1;
+
+        if (this.difficulty === 'easy') {
+            // Avoid rookie mistakes: if opponent (human) made trump, don't lead valuable trumps.
+            if (!this.playedCards.length && this.trumpSuit !== 'NT' && this.maker === 'human') {
+                const nonTrump = validMoves.filter(i => hand[i].suit !== this.trumpSuit);
+                const safeTrump = validMoves.filter(i => hand[i].suit === this.trumpSuit && hand[i].rank !== '9');
+                if (nonTrump.length) {
+                    chosenIndex = nonTrump[Math.floor(Math.random() * nonTrump.length)];
+                } else if (safeTrump.length) {
+                    chosenIndex = safeTrump[Math.floor(Math.random() * safeTrump.length)];
+                } else {
+                    chosenIndex = validMoves[Math.floor(Math.random() * validMoves.length)];
+                }
+            } else {
+                chosenIndex = validMoves[Math.floor(Math.random() * validMoves.length)];
+            }
+        } else {
+            const isHard = this.difficulty === 'hard';
+            let bestScore = -1000;
+            const hasTrumpJack = hand.some(c => c.suit === this.trumpSuit && c.rank === 'J');
+
+            validMoves.forEach(idx => {
+                const card = hand[idx];
+                let score = 0;
+                const p1 = this.playedCards[0] ? this.playedCards[0].card : null;
+                
+                if (!p1) {
+                    // --- AI Leading Logic ---
+                    const isTrump = this.trumpSuit !== 'NT' && card.suit === this.trumpSuit;
+
+                    // HARD MODE: Be smarter when opponent makes trump.
+                    if (this.maker === 'human' && isTrump) {
+                        // Opponent made trump. Avoid leading trump unless holding the Jack (all difficulties).
+                        const basePenalty = isHard ? 25 : 18;
+                        if (hasTrumpJack) {
+                            if (card.rank === 'J') {
+                                score += 15; // Still a good move to pull trumps with the best card.
+                            } else {
+                                // If we have the Jack, still hesitant to lead other trumps.
+                                score -= basePenalty;
+                            }
+                        } else {
+                            // No Jack? Very bad to lead trump.
+                            score -= basePenalty + 5;
+                        }
+                        
+                        // Especially penalize leading the 9 (Nel) without the Jack.
+                        if (card.rank === '9' && !hasTrumpJack) {
+                            score -= basePenalty + 10; // Extra penalty (hurts medium too)
+                        }
+                    } else {
+                        // Original (Medium) logic, or if AI is maker.
+                        if (isTrump) {
+                            if (card.rank === 'J') score += 24;
+                            else if (card.rank === '9') score += 14;
+                            else if (card.rank === 'A') score += 12;
+                            else if (card.rank === '10') score += 10;
+                            else score += 6;
+                            if (hasTrumpJack && card.rank === '9') score -= 8; // don't lead 9 if Jack exists
+                        } else { // Non-trump lead
+                            if (card.rank === 'A') score += 12;
+                            else if (card.rank === '10') score += 9;
+                            else if (card.rank === 'K') score += 6;
+                            else score += 2;
+                        }
+                    }
+                } else {
+                    // --- AI Following Logic ---
+                    const currentTrickVal = p1.getValue(this.trumpSuit);
+                    const myVal = card.getValue(this.trumpSuit);
+                    let winning = false;
+                    
+                    if (this.trumpSuit === 'NT') {
+                        if (p1.suit === card.suit) {
+                             if (card.getPower('NT') > p1.getPower('NT')) winning = true;
+                        }
+                    } else {
+                        if (p1.suit === card.suit) {
+                             if (card.getPower(this.trumpSuit) > p1.getPower(this.trumpSuit)) winning = true;
+                        } else if (card.suit === this.trumpSuit) {
+                            winning = true;
+                        }
+                    }
+
+                    const trickValueIfWin = currentTrickVal + myVal;
+
+                    if (winning) {
+                        score += trickValueIfWin;
+                        if (isHard && card.suit === this.trumpSuit && trickValueIfWin < 15) {
+                            score -= 6; // don't waste small trump on low-value tricks
+                        }
+                    } else {
+                        score -= myVal;
+                        if (isHard && card.suit === this.trumpSuit && p1.suit !== this.trumpSuit) {
+                            score -= 8; // avoid throwing trump if not winning
+                        }
+                    }
+                }
+                if (score > bestScore) {
+                    bestScore = score;
+                    chosenIndex = idx;
+                }
+            });
+        }
+
+        this.playCard('ai', chosenIndex);
+    },
+
+    getTrumpCardHTML() {
+        if (!this.trumpSuit) return '';
+        const color = (this.trumpSuit === 'NT') ? '#2c3e50' : (COLORS[this.trumpSuit] || '#2c3e50');
+        const center = (this.trumpSuit === 'NT') ? 'NT' : SYMBOLS[this.trumpSuit];
+        return `
+            <div class="card trump-card" style="color:${color};">
+                <div class="card-center">${center}</div>
+            </div>
+        `;
+    },
+
+    computeTrickParts() {
+        const parts = {
+            human: { jacks: 0, nines: 0, other: 0, lastTrick: 0, blackHand: 0 },
+            ai: { jacks: 0, nines: 0, other: 0, lastTrick: 0, blackHand: 0 }
+        };
+
+        this.tricks.forEach(trick => {
+            const winner = trick.winner;
+            if (!winner) return;
+            trick.cards.forEach(pc => {
+                if (!pc || !pc.card) return;
+                const card = pc.card;
+                const val = card.getValue(this.trumpSuit);
+                if (card.rank === 'J') parts[winner].jacks += val;
+                else if (card.rank === '9') parts[winner].nines += val;
+                else parts[winner].other += val;
+            });
+        });
+
+        if (this.lastTrickWinner) parts[this.lastTrickWinner].lastTrick += 10;
+        parts.human.blackHand += this.blackHandBonus.human || 0;
+        parts.ai.blackHand += this.blackHandBonus.ai || 0;
+
+        // Ensure totals align with tracked trick points
+        ['human', 'ai'].forEach(p => {
+            const subtotal = parts[p].jacks + parts[p].nines + parts[p].other + parts[p].lastTrick + parts[p].blackHand;
+            const diff = this.trickPoints[p] - subtotal;
+            if (diff !== 0) parts[p].other += diff;
+        });
+
+        return parts;
+    },
+
+    buildRoundStats(hFinal, aFinal, hPoints, aPoints) {
+        const parts = this.computeTrickParts();
+        const sumParts = (p) => parts[p].jacks + parts[p].nines + parts[p].other + parts[p].lastTrick + parts[p].blackHand;
+        return {
+            human: {
+                meld: this.meldPoints.human,
+                bella: this.bellaPoints.human || 0,
+                ...parts.human,
+                trickTotal: sumParts('human'),
+                collected: hPoints,
+                finalAwarded: hFinal
+            },
+            ai: {
+                meld: this.meldPoints.ai,
+                bella: this.bellaPoints.ai || 0,
+                ...parts.ai,
+                trickTotal: sumParts('ai'),
+                collected: aPoints,
+                finalAwarded: aFinal
+            }
+        };
+    },
+
+    buildRoundBreakdownTable(stats) {
+        const row = (label, getter) => {
+            const [h, a] = getter();
+            return `<tr><td class="category">${label}</td><td>${h}</td><td>${a}</td></tr>`;
+        };
+        const rows = [
+            row('Melds (excl. Bella)', () => [stats.human.meld, stats.ai.meld]),
+            row('Bella bonus', () => [stats.human.bella, stats.ai.bella]),
+            row('Jacks', () => [stats.human.jacks, stats.ai.jacks]),
+            row('Nines', () => [stats.human.nines, stats.ai.nines]),
+            row('Other tricks', () => [stats.human.other, stats.ai.other]),
+            row('Last trick (Stog)', () => [stats.human.lastTrick, stats.ai.lastTrick]),
+            row('Black Hand bonus', () => [stats.human.blackHand, stats.ai.blackHand]),
+            row('<strong>Trick subtotal</strong>', () => [stats.human.trickTotal, stats.ai.trickTotal]),
+            row('<strong>Collected (pre-bid)</strong>', () => [stats.human.collected, stats.ai.collected]),
+            row('<strong>Final awarded</strong>', () => [stats.human.finalAwarded, stats.ai.finalAwarded])
+        ].join('');
+
+        return `
+            <table class="score-table">
+                <thead><tr><th>Category</th><th>${this.getPlayerIdentifier('human')}</th><th>${this.opponentLabel()}</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+
+    getHistoryHTML() {
+        if (!this.roundHistory.length) return '<em>No rounds played yet.</em>';
+        const rows = this.roundHistory.map(entry => {
+            const trump = entry.trump ? (entry.trump === 'NT' ? 'NT' : (SYMBOLS[entry.trump] || entry.trump)) : '-';
+            const maker = entry.maker === 'human' ? this.getPlayerIdentifier('human') : this.opponentLabel();
+            return `
+                <tr>
+                    <td>${entry.round}</td>
+                    <td>${trump}</td>
+                    <td>${maker}</td>
+                    <td>${entry.humanDelta}</td>
+                    <td>${entry.aiDelta}</td>
+                    <td>${entry.humanTotal}</td>
+                    <td>${entry.aiTotal}</td>
+                </tr>
+            `;
+        }).join('');
+        return `
+            <table class="score-table">
+                <thead><tr><th>#</th><th>Trump</th><th>Maker</th><th>${this.getPlayerIdentifier('human')} Δ</th><th>${this.opponentLabel()} Δ</th><th>${this.getPlayerIdentifier('human')} Total</th><th>${this.opponentLabel()} Total</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+
+    recordRoundHistory(stats, msg) {
+        this.roundHistory.push({
+            round: this.roundHistory.length + 1,
+            trump: this.trumpSuit,
+            maker: this.maker,
+            msg,
+            humanDelta: stats.human.finalAwarded,
+            aiDelta: stats.ai.finalAwarded,
+            humanTotal: this.scores.human,
+            aiTotal: this.scores.ai
+        });
+    },
+
+    renderResultModal({ stats, msg, gameOver }) {
+        const titleEl = document.getElementById('result-title');
+        const winMsgEl = document.getElementById('win-message');
+        const detailEl = document.getElementById('result-detail');
+        const breakdownEl = document.getElementById('round-breakdown');
+        const historyEl = document.getElementById('history-table');
+        const actionBtn = document.getElementById('result-action');
+
+        winMsgEl.classList.add('hidden');
+        winMsgEl.classList.remove('lost');
+
+        const trumpLabel = this.trumpSuit ? (this.trumpSuit === 'NT' ? 'NT' : SYMBOLS[this.trumpSuit]) : '-';
+        const makerLabel = this.maker === 'human' ? this.getPlayerIdentifier('human') : this.opponentLabel();
+
+        titleEl.innerText = gameOver ? 'Game Over' : 'Round Over';
+        detailEl.innerHTML = `
+            ${msg}<br>
+            Trump: ${trumpLabel} | Maker: ${makerLabel}<br>
+            Collected — ${this.getPlayerIdentifier('human')}: ${stats.human.collected}, ${this.opponentLabel()}: ${stats.ai.collected}<br>
+            Awarded — ${this.getPlayerIdentifier('human')}: ${stats.human.finalAwarded}, ${this.opponentLabel()}: ${stats.ai.finalAwarded}
+        `;
+
+        breakdownEl.innerHTML = this.buildRoundBreakdownTable(stats);
+        historyEl.innerHTML = this.getHistoryHTML();
+        const historyContainer = document.getElementById('history-container');
+        if (historyContainer) {
+            historyContainer.classList.toggle('hidden', !gameOver);
+        }
+
+        actionBtn.innerText = gameOver ? 'New Game' : 'Next Round';
+        actionBtn.setAttribute('onclick', gameOver ? 'location.reload()' : 'Game.startRound()');
+
+        if (gameOver) {
+            if (this.scores.human > this.scores.ai) {
+                winMsgEl.innerText = 'YOU WON!';
+                winMsgEl.classList.remove('hidden');
+                this.triggerWinAnimation();
+            } else {
+                winMsgEl.innerText = 'YOU LOST!';
+                winMsgEl.classList.add('lost');
+                winMsgEl.classList.remove('hidden');
+                this.triggerLossAnimation();
+            }
+        }
+
+        document.getElementById('result-modal').classList.remove('hidden');
+    },
+
+    updateUI() {
+        const hContainer = document.getElementById('human-hand');
+        hContainer.innerHTML = '';
+        this.hands.human.forEach((c, i) => {
+            const isPlayTurn = (this.turn === this.mySlot && this.phase === 'play');
+            const isValidMove = isPlayTurn ? this.isValidMove(c, this.hands.human) : false;
+            const div = document.createElement('div');
+            div.innerHTML = c.getHTML(true, isValidMove);
+            const cardEl = div.firstElementChild;
+            if (isPlayTurn && !isValidMove) cardEl.classList.add('disabled');
+            if (this.animatingDeal) {
+                cardEl.style.opacity = '0';
+                cardEl.classList.add('dealing-anim');
+                cardEl.style.animationDelay = `${i * 0.1}s`;
+            }
+            if (isValidMove) {
+                cardEl.onclick = () => this.playCard('human', i);
+            }
+            // Apply meld highlight class if this card was part of a declared meld
+            if (this.highlightCards.human && this.highlightCards.human.includes(c.id)) {
+                cardEl.classList.add('meld-highlight');
+            }
+            hContainer.appendChild(cardEl);
+        });
+
+        const aContainer = document.getElementById('ai-hand');
+        aContainer.innerHTML = '';
+        this.hands.ai.forEach((c, i) => {
+            const div = document.createElement('div');
+            const isHighlighted = this.highlightCards.ai && this.highlightCards.ai.includes(c.id);
+            const showFaceUp = isHighlighted && this.meldsRevealed;
+            div.innerHTML = c.getHTML(showFaceUp);
+            const cardEl = div.firstElementChild;
+            if (this.animatingDeal) {
+                cardEl.style.opacity = '0';
+                cardEl.classList.add('dealing-anim');
+                cardEl.style.animationDelay = `${i * 0.1}s`;
+            }
+            if (isHighlighted) {
+                cardEl.classList.add('meld-highlight');
+            }
+            aContainer.appendChild(cardEl);
+        });
+
+        document.getElementById('ai-chat-bubble').style.display = (this.mode === 'mp') ? 'none' : 'block';
+
+        // Render table slots from tracked playedCards (important for remote viewer)
+        this.renderTableSlots();
+
+        const tDisp = document.getElementById('trump-display');
+        if (this.trumpSuit) {
+        const makerLabel = this.maker === 'human' ? this.getPlayerIdentifier('human') : this.opponentLabel();
+            tDisp.innerHTML = `
+                <div class="trump-label">Trump</div>
+                ${this.getTrumpCardHTML()}
+                <div class="trump-maker">(${makerLabel})</div>
+            `;
+        } else {
+            tDisp.innerHTML = '';
+        }
+
+        const status = document.getElementById('turn-indicator');
+        const oppName = (this.mode === 'mp')
+            ? (this.isHost ? 'CHAMPS' : 'WINNERS')
+            : this.opponentLabel();
+        if (this.phase.startsWith('bid')) status.innerText = `Bidding Phase - ${this.turn === this.mySlot ? "Your Turn" : `${oppName} Thinking...`}`;
+        else if (this.phase === 'play') status.innerText = `${this.turn === this.mySlot ? "Your Turn" : `${oppName}'s Turn`}`;
+
+        this.updateScoreboard();
+        if (this.mode === 'mp' && this.isHost) Net.sendState();
+
+        if (this.turn !== this.prevTurn && this.turn === this.mySlot) {
+            playSound('turn');
+        }
+        this.prevTurn = this.turn;
+        this.refreshDixButton();
+        this.updateActionModal();
+    },
+
+    renderTurnUp() {
+        const slot = document.getElementById('turnup-slot');
+        if (this.turnUpCard) { // Updated check: Show if card exists, ignore phase
+            slot.innerHTML = this.turnUpCard.getHTML();
+        } else {
+            slot.innerHTML = '';
+        }
+    },
+
+    updateScoreboard() {
+        document.getElementById('limit-display').innerText = this.targetScore;
+        document.getElementById('score-human').innerText = this.scores.human;
+        document.getElementById('score-ai').innerText = this.scores.ai;
+
+        const humanLabelEl = document.getElementById('label-human');
+        const aiLabelEl = document.getElementById('label-ai');
+        const humanLabel = this.getPlayerIdentifier('human');
+        const aiLabel = this.getPlayerIdentifier('ai');
+        if (humanLabelEl) humanLabelEl.innerText = humanLabel;
+        if (aiLabelEl) aiLabelEl.innerText = aiLabel;
+    },
+
+    log(msg) {
+        const log = document.getElementById('game-log');
+        // Only scroll if already near bottom
+        const isAtBottom = log.scrollHeight - log.scrollTop <= log.clientHeight + 50;
+        
+        const entry = document.createElement('div');
+        entry.innerText = `> ${msg}`;
+        log.appendChild(entry);
+        this.logHistory.push(msg);
+        if (this.logHistory.length > 120) this.logHistory.shift();
+        if (this.mode === 'mp' && this.isHost) Net.sendLog(msg);
+        
+        if (isAtBottom) {
+            log.scrollTop = log.scrollHeight;
+        }
+    },
+
+    setupChatUI() {
+        const input = document.getElementById('chat-input');
+        const btn = document.getElementById('chat-send');
+        if (!input || !btn) return;
+        const send = () => {
+            const text = input.value.trim();
+            if (!text) return;
+            this.addChatMessage('human', text);
+            input.value = '';
+            if (this.mode === 'mp') Net.sendChat(text);
+        };
+        btn.onclick = send;
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                send();
+            }
+        });
+    },
+
+    addChatMessage(who, text) {
+        const box = document.getElementById('chat-messages');
+        if (!box) return;
+        const div = document.createElement('div');
+        div.className = `chat-msg ${who === 'human' ? 'chat-blue' : 'chat-red'}`;
+        div.innerText = text;
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+    },
+
+    receiveChat(payload) {
+        if (!payload || !payload.text) return;
+        const localSide = Net.isHost ? 'host' : 'guest';
+        const who = (payload.from && payload.from === localSide) ? 'human' : 'ai';
+        this.addChatMessage(who, payload.text);
+    },
+
+    hideActionModal() {
+        document.getElementById('action-modal').classList.add('hidden');
+        document.getElementById('action-modal-content').innerHTML = '';
+    },
+
+    updateActionModal() {
+        if (!window.matchMedia("(max-width: 768px)").matches) return;
+
+        const modal = document.getElementById('action-modal');
+        const modalContent = document.getElementById('action-modal-content');
+        let contentHTML = '';
+
+        // 1. Check for Dix Swap
+        const canSwapDix = !this.humanHasPlayed && this.phase === 'play' && this.trumpSuit && this.turnUpCard && this.trumpSuit === this.turnUpCard.suit && this.hands.human.some(c => c.rank === '7' && c.suit === this.trumpSuit);
+        if (canSwapDix) {
+            contentHTML += `<button onclick="Game.swapDix(); Game.hideActionModal();">Swap the 7</button>`;
+        }
+
+        // 2. Check for Meld Call
+        const canCallMeld = !this.meldResolved && !this.humanMeldCalled && this.trumpSuit && this.trumpSuit !== 'NT';
+        if (canCallMeld) {
+            const sourceHand = (this.meldHandsSnapshot.human.length > 0) ? this.meldHandsSnapshot.human : this.hands.human;
+            const best = this.bestSeq(this.getSequences(sourceHand));
+            if (best) {
+                const info = this.scoreSeq(best);
+                const name = info.points === 50 ? "FIFTY" : "TWENTY";
+                contentHTML += `<button class="meld-btn" onclick="Game.callMelds()">Call ${name}</button>`;
+
+                if (this.mode !== 'mp' && this.turn === 'ai' && !this.firstCardPlayed) {
+                     contentHTML += `<button onclick="Game.skipMelds()">Skip Meld</button>`;
+                }
+            }
+        }
+        
+        if (contentHTML) {
+            modalContent.innerHTML = contentHTML;
+            modal.classList.remove('hidden');
+        } else {
+            this.hideActionModal();
+        }
+    },
+
+    callMelds() {
+        if (this.meldResolved || this.humanMeldCalled) return;
+        
+        const sourceHand = (this.meldHandsSnapshot.human.length > 0) ? this.meldHandsSnapshot.human : this.hands.human;
+        const best = this.bestSeq(this.getSequences(sourceHand));
+        if (!best) return;
+
+        this.humanDeclaredMelds = [best];
+        this.log(`${this.getPlayerIdentifier('human')} called a meld.`);
+        this.humanMeldCalled = true;
+        this.setMeldHighlight('human', [best]);
+        this.clearMeldButtons();
+        this.hideActionModal();
+
+        if (this.mode === 'mp') {
+            const payload = [best.map(c => c.id)];
+            if (!this.isHost) {
+                Net.sendAction({ type: 'meld', payload });
+            } else {
+                Net.sendState();
+            }
+        }
+        this.resumeAiAfterMeld();
+    },
+
+    async comment(trigger) {
+        if (this.mode === 'mp') return;
+        if (!apiKey) return;
+        
+        let context = "";
+        const score = `Score - You: ${this.scores.human}, AI: ${this.scores.ai}`;
+        
+        switch(trigger) {
+            case 'intro': context = "Game start. You are greeting the opponent."; break;
+            case 'ai_trump': context = `You (AI) just confidently chose ${this.trumpSuit} as trump.`; break;
+            case 'meld_win': context = "You (AI) just won the Meld points with a better sequence."; break;
+            case 'big_trick': context = "You (AI) just won a huge trick with lots of points."; break;
+            case 'human_wet': context = "The human player went Bete and lost all their points to you. Taunt them."; break;
+            case 'ai_wet': context = "You (AI) went Bete and lost points. Be grumpy."; break;
+        }
+
+        const prompt = `You are a witty, competitive AI playing Klabberjas against a human. 
+        Context: ${context} ${score}.
+        Write a very short (max 12 words), pithy remark to the player. No hashtags.`;
+
+        const text = await callGemini(prompt);
+        if (text) {
+            const bubble = document.getElementById('ai-chat-bubble');
+            bubble.innerText = text;
+            bubble.style.opacity = 1;
+            setTimeout(() => bubble.style.opacity = 0, 5000);
+        }
+    }
+};
+
+// Expose Game for dev console access
+window.Game = Game;
+
+</script>
+</body>
+</html>
