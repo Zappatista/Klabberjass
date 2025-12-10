@@ -1462,8 +1462,8 @@ const Net = {
         this.peer.on('open', () => this.setStatus(`Hosting. Code: ${this.code}`));
         this.peer.on('connection', (conn) => {
             this.bindConn(conn);
-            this.setStatus("Player connected!");
-            this.connReady = true; // enable start immediately on incoming connection
+            this.setStatus("Player found, establishing connection...");
+            // CRITICAL FIX: Do not assume connection is ready. Wait for handshake.
             this.updateStartDisabled();
         });
         this.peer.on('error', (err) => {
@@ -1487,13 +1487,9 @@ const Net = {
                  this.setStatus("Connection failed immediately.");
                  return;
             }
-            conn.on('open', () => {
-                this.bindConn(conn);
-                this.setStatus("Connected! Waiting for host to start.");
-                this.updateStartDisabled();
-                Net.send({ type: 'hello' });
-            });
-            conn.on('error', (err) => this.setStatus(`Conn error: ${err.type || err}`));
+            // CRITICAL FIX: The 'hello' message is now sent inside the bindConn 'open' handler
+            // to ensure it only happens when the DataConnection is truly ready.
+            this.bindConn(conn); 
         });
         this.peer.on('error', (err) => {
             console.error(err);
@@ -1502,17 +1498,21 @@ const Net = {
     },
     bindConn(conn) {
         this.conn = conn;
-        this.connReady = !!conn?.open;
-        // Fallback: make sure host radio is set when we accept a connection (host side)
-        const hostRadio = document.querySelector('input[name="mp-role"][value="host"]');
-        if (hostRadio && !hostRadio.checked && this.isHost) hostRadio.checked = true;
+        // CRITICAL FIX: Do not assume ready based on `conn.open`. Wait for the 'open' event.
+        this.connReady = false; 
+
         conn.on('open', () => {
-            this.setStatus("Player connected!");
-            this.connReady = true;
-            if (Game.mode === 'mp' && Game.isHost) {
-                this.sendState(); // push initial state as soon as channel opens
+            // This event signifies the data channel is ready.
+            if (this.isHost) {
+                this.setStatus("Data channel open. Waiting for guest handshake...");
+                // We still wait for the 'hello' message to confirm the guest is also ready.
+            } else {
+                // GUEST-SIDE: The connection is open, now send the handshake.
+                this.connReady = true;
+                this.setStatus("Connected! Sending handshake to host...");
+                this.send({ type: 'hello' });
+                this.updateStartDisabled();
             }
-            this.updateStartDisabled(); // Ensure Start button enables for host
         });
         conn.on('data', (data) => this.handleData(data));
         conn.on('close', () => {
@@ -1525,10 +1525,13 @@ const Net = {
     },
     handleData(packet) {
         if (!packet || !packet.type) return;
+        
+        // CRITICAL FIX: Host now waits for 'hello' to consider the connection fully ready.
         if (packet.type === 'hello' && this.isHost) {
-            // Guest announced presence; push current state immediately
             this.connReady = true;
-            this.sendState();
+            this.setStatus("Player connected! Ready to start.");
+            this.updateStartDisabled(); // This enables the start button.
+            this.sendState(); 
         } else if (packet.type === 'state' && !this.isHost) {
             Game.applyRemoteState(packet.payload);
             this.connReady = true;
